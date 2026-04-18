@@ -30,94 +30,158 @@ if (!$apt) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Queue Ticket</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Queue Ticket | Medical Practice</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: 'Courier New', monospace;
-            background: #fff;
+            background: #f5f5f5;
             margin: 0;
             padding: 20px;
             display: flex;
             justify-content: center;
+            align-items: center;
+            min-height: 100vh;
         }
+        
         .ticket {
-            width: 300px;
+            width: 350px;
+            background: white;
             border: 2px dashed #333;
-            padding: 20px;
+            border-radius: 8px;
+            padding: 25px;
             text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         }
-        h1 {
-            font-size: 48px;
-            margin: 10px 0;
-            color: #000;
+        
+        .clinic-name {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #2d3748;
         }
+        
         h2 {
             font-size: 24px;
-            margin: 5px 0;
+            margin: 10px 0;
             border-bottom: 1px solid #333;
             padding-bottom: 10px;
+            color: #1a202c;
         }
+        
         .queue-number {
-            font-size: 72px;
+            font-size: 80px;
             font-weight: bold;
             margin: 20px 0;
-            color: #000;
+            color: #48bb78;
+            letter-spacing: 5px;
         }
+        
         .info {
             text-align: left;
             margin: 15px 0;
             font-size: 14px;
+            border-top: 1px solid #ddd;
+            padding-top: 15px;
         }
+        
         .info p {
-            margin: 5px 0;
+            margin: 8px 0;
         }
+        
         .footer {
             margin-top: 20px;
-            font-size: 12px;
-            border-top: 1px solid #333;
-            padding-top: 10px;
+            font-size: 11px;
+            border-top: 1px solid #ddd;
+            padding-top: 12px;
+            color: #4a5568;
         }
-        .print-btn {
+        
+        .btn-group {
             margin-top: 20px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        
+        .print-btn {
             padding: 10px 20px;
             background: #48bb78;
             color: white;
             border: none;
-            border-radius: 5px;
+            border-radius: 8px;
             cursor: pointer;
-            font-size: 16px;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.2s ease;
         }
+        
+        .print-btn:hover {
+            background: #38a169;
+            transform: translateY(-1px);
+        }
+        
+        .close-btn {
+            background: #718096;
+        }
+        
+        .close-btn:hover {
+            background: #4a5568;
+        }
+        
         @media print {
-            .print-btn {
+            .btn-group {
                 display: none;
+            }
+            body {
+                background: white;
+                padding: 0;
+            }
+            .ticket {
+                box-shadow: none;
+                border: 2px dashed #333;
             }
         }
     </style>
 </head>
 <body>
     <div class="ticket">
-        <h2>🏥 MEDICAL PRACTICE</h2>
-        <div class="queue-number">#<?php echo $apt['queue_number']; ?></div>
+        <div class="clinic-name">🏥 MEDICAL PRACTICE</div>
+        <h2>Queue Ticket</h2>
+        
+        <div class="queue-number">
+            #<?php echo htmlspecialchars($apt['queue_number'] ?? 'N/A'); ?>
+        </div>
         
         <div class="info">
-            <p><strong>Date:</strong> <?php echo date('F j, Y', strtotime($apt['appointment_date'])); ?></p>
-            <p><strong>Time:</strong> <?php echo date('g:i A', strtotime($apt['appointment_time'])); ?></p>
-            <p><strong>Patient:</strong> <?php echo htmlspecialchars($apt['patient_name']); ?></p>
-            <p><strong>Doctor:</strong> Dr. <?php echo htmlspecialchars($apt['doctor_name']); ?></p>
-            <p><strong>Status:</strong> <?php echo ucfirst($apt['status']); ?></p>
+            <p><strong>📅 Date:</strong> <?php echo date('F j, Y', strtotime($apt['appointment_date'])); ?></p>
+            <p><strong>⏰ Time:</strong> <?php echo date('g:i A', strtotime($apt['appointment_time'])); ?></p>
+            <p><strong>👤 Patient:</strong> <?php echo htmlspecialchars($apt['patient_name']); ?></p>
+            <p><strong>👨‍⚕️ Doctor:</strong> Dr. <?php echo htmlspecialchars($apt['doctor_name']); ?></p>
+            <p><strong>📌 Status:</strong> <?php echo ucfirst(htmlspecialchars($apt['status'])); ?></p>
         </div>
         
         <div class="footer">
             <p>Please wait for your number to be called</p>
-            <p>Estimated wait time: ~15 minutes per patient</p>
+            <p>⏱️ Estimated wait: ~15 minutes per patient</p>
             <p>Thank you for choosing our clinic!</p>
         </div>
         
-        <button class="print-btn" onclick="window.print()">🖨️ Print Ticket</button>
-        <button class="print-btn" onclick="window.close()" style="background: #718096;">Close</button>
+        <div class="btn-group">
+            <button class="print-btn" onclick="window.print()">
+                🖨️ Print Ticket
+            </button>
+            <button class="print-btn close-btn" onclick="window.close()">
+                ✖ Close
+            </button>
+        </div>
     </div>
 </body>
 </html>
