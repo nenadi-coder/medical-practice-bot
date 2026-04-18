@@ -1,20 +1,19 @@
 <?php
-require_once '../includes/config.php';
-
+session_start();
 $error = '';
 $success = '';
 
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    // Get form data
-    $first_name = trim($_POST['first_name']);
-    $last_name = trim($_POST['last_name']);
-    $email = trim($_POST['email']);
-    $phone = trim($_POST['phone']);
-    $password = $_POST['password'];
-    $confirm_password = $_POST['confirm_password'];
-    $date_of_birth = $_POST['date_of_birth'];
+$API_URL = 'https://medical-bot.ouamanenadia041.workers.dev/api/register';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $first_name = trim($_POST['first_name'] ?? '');
+    $last_name = trim($_POST['last_name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $phone = trim($_POST['phone'] ?? '');
+    $password = $_POST['password'] ?? '';
+    $confirm_password = $_POST['confirm_password'] ?? '';
+    $date_of_birth = $_POST['date_of_birth'] ?? '';
     
-    // Basic validation
     if (empty($first_name) || empty($last_name) || empty($email) || empty($password)) {
         $error = "All fields are required";
     } elseif ($password !== $confirm_password) {
@@ -22,26 +21,33 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     } elseif (strlen($password) < 6) {
         $error = "Password must be at least 6 characters";
     } else {
-        // Check if email already exists
-        $check_sql = "SELECT patient_id FROM patients WHERE email = ?";
-        $check_stmt = $pdo->prepare($check_sql);
-        $check_stmt->execute([$email]);
+        $data = json_encode([
+            'first_name' => $first_name,
+            'last_name' => $last_name,
+            'email' => $email,
+            'phone' => $phone,
+            'password' => $password,
+            'date_of_birth' => $date_of_birth
+        ]);
         
-        if ($check_stmt->rowCount() > 0) {
-            $error = "Email already registered";
+        $ch = curl_init($API_URL);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $data);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        $result = json_decode($response, true);
+        
+        if ($httpCode === 200 && $result['success']) {
+            $success = "Registration successful! You can now login.";
+            $_POST = array();
         } else {
-            // SIMPLE VERSION - store plain text password (no hashing)
-            $sql = "INSERT INTO patients (first_name, last_name, email, phone, password, date_of_birth) 
-                    VALUES (?, ?, ?, ?, ?, ?)";
-            $stmt = $pdo->prepare($sql);
-            
-            if ($stmt->execute([$first_name, $last_name, $email, $phone, $password, $date_of_birth])) {
-                $success = "Registration successful! You can now login.";
-                // Clear form data
-                $_POST = array();
-            } else {
-                $error = "Registration failed. Please try again.";
-            }
+            $error = $result['error'] ?? "Registration failed. Please try again.";
         }
     }
 }
@@ -51,167 +57,180 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Patient Registration - Medical Practice</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patient Registration | Medical Practice</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(125deg, #e0f0ff 0%, #f5f0fc 100%);
             min-height: 100vh;
             display: flex;
             justify-content: center;
             align-items: center;
+            padding: 1.5rem;
         }
-        
-        .container {
+        .register-card {
             background: white;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            border-radius: 2rem;
+            box-shadow: 0 25px 45px -12px rgba(0, 0, 0, 0.15);
             width: 100%;
-            max-width: 500px;
+            max-width: 520px;
+            padding: 2.2rem 2rem;
+            border: 1px solid rgba(102, 126, 234, 0.15);
         }
-        
+        .portal-badge {
+            display: inline-block;
+            background: #eef2ff;
+            padding: 0.4rem 1rem;
+            border-radius: 40px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: #4f46e5;
+            margin-bottom: 1.2rem;
+        }
         h2 {
-            text-align: center;
-            color: #333;
-            margin-bottom: 30px;
+            font-size: 1.8rem;
+            font-weight: 800;
+            background: linear-gradient(120deg, #1e2a3e, #2d3a5e);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+            margin-bottom: 0.5rem;
         }
-        
-        .form-group {
-            margin-bottom: 20px;
+        .welcome-text {
+            color: #5b6e8c;
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
         }
-        
-        label {
-            display: block;
-            margin-bottom: 5px;
-            color: #555;
-            font-weight: bold;
-        }
-        
+        .form-group { margin-bottom: 1.2rem; }
+        label { display: block; margin-bottom: 0.4rem; font-weight: 600; color: #1f2a44; font-size: 0.85rem; }
+        .input-wrapper { position: relative; display: flex; align-items: center; }
+        .input-wrapper i { position: absolute; left: 1rem; color: #a0b3d9; font-size: 1rem; }
         input {
             width: 100%;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            font-size: 16px;
-        }
-        
-        input:focus {
+            padding: 0.8rem 1rem 0.8rem 2.8rem;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 1rem;
+            font-size: 0.9rem;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.2s ease;
             outline: none;
-            border-color: #667eea;
         }
-        
-        button {
+        input:focus { border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15); }
+        .error {
+            background: #fff1f0;
+            color: #d9534f;
+            padding: 0.85rem 1rem;
+            border-radius: 1rem;
+            margin-bottom: 1.5rem;
+            border-left: 4px solid #f56565;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .success {
+            background: #e8f5e8;
+            color: #2e7d32;
+            padding: 0.85rem 1rem;
+            border-radius: 1rem;
+            margin-bottom: 1.5rem;
+            border-left: 4px solid #48bb78;
+            font-size: 0.85rem;
+        }
+        .register-btn {
             width: 100%;
-            padding: 12px;
-            background: #667eea;
+            background: linear-gradient(95deg, #4f46e5, #7c3aed);
             color: white;
             border: none;
-            border-radius: 5px;
-            font-size: 16px;
-            font-weight: bold;
+            border-radius: 60px;
+            padding: 0.9rem;
+            font-weight: 700;
+            font-size: 1rem;
             cursor: pointer;
-            transition: background 0.3s;
+            margin-top: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
         }
-        
-        button:hover {
-            background: #5a67d8;
+        .register-btn:hover {
+            background: linear-gradient(95deg, #4338ca, #6d28d9);
+            transform: translateY(-2px);
         }
-        
-        .error {
-            background: #fee;
-            color: #c33;
-            padding: 10px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            border: 1px solid #fcc;
-        }
-        
-        .success {
-            background: #efe;
-            color: #3c3;
-            padding: 10px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            border: 1px solid #cfc;
-        }
-        
-        .login-link {
-            text-align: center;
-            margin-top: 20px;
-        }
-        
-        .login-link a {
-            color: #667eea;
-            text-decoration: none;
-        }
-        
-        .login-link a:hover {
-            text-decoration: underline;
-        }
+        .login-link { text-align: center; margin-top: 1.5rem; font-size: 0.9rem; }
+        .login-link a { color: #4f46e5; text-decoration: none; font-weight: 700; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h2>Patient Registration</h2>
-        
+    <div class="register-card">
+        <div class="portal-badge"><i class="fas fa-user-plus"></i> New Patient Registration</div>
+        <h2>Create Account</h2>
+        <div class="welcome-text">Join our Shifa Medical Center to manage appointments and receive quality care.</div>
+
         <?php if ($error): ?>
-            <div class="error"><?php echo $error; ?></div>
+            <div class="error"><i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?></div>
         <?php endif; ?>
-        
         <?php if ($success): ?>
-            <div class="success"><?php echo $success; ?></div>
+            <div class="success"><i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($success); ?></div>
         <?php endif; ?>
-        
-        <form method="POST" action="">
+
+        <form method="POST">
             <div class="form-group">
-                <label>First Name:</label>
-                <input type="text" name="first_name" value="<?php echo isset($_POST['first_name']) ? htmlspecialchars($_POST['first_name']) : ''; ?>" required>
+                <label>First Name</label>
+                <div class="input-wrapper">
+                    <i class="fas fa-user"></i>
+                    <input type="text" name="first_name" required>
+                </div>
             </div>
-            
             <div class="form-group">
-                <label>Last Name:</label>
-                <input type="text" name="last_name" value="<?php echo isset($_POST['last_name']) ? htmlspecialchars($_POST['last_name']) : ''; ?>" required>
+                <label>Last Name</label>
+                <div class="input-wrapper">
+                    <i class="fas fa-user"></i>
+                    <input type="text" name="last_name" required>
+                </div>
             </div>
-            
             <div class="form-group">
-                <label>Email:</label>
-                <input type="email" name="email" value="<?php echo isset($_POST['email']) ? htmlspecialchars($_POST['email']) : ''; ?>" required>
+                <label>Email Address</label>
+                <div class="input-wrapper">
+                    <i class="fas fa-envelope"></i>
+                    <input type="email" name="email" required>
+                </div>
             </div>
-            
             <div class="form-group">
-                <label>Phone:</label>
-                <input type="tel" name="phone" value="<?php echo isset($_POST['phone']) ? htmlspecialchars($_POST['phone']) : ''; ?>" required>
+                <label>Phone Number</label>
+                <div class="input-wrapper">
+                    <i class="fas fa-phone"></i>
+                    <input type="tel" name="phone" required>
+                </div>
             </div>
-            
             <div class="form-group">
-                <label>Date of Birth:</label>
-                <input type="date" name="date_of_birth" value="<?php echo isset($_POST['date_of_birth']) ? htmlspecialchars($_POST['date_of_birth']) : ''; ?>" required>
+                <label>Date of Birth</label>
+                <div class="input-wrapper">
+                    <i class="fas fa-calendar"></i>
+                    <input type="date" name="date_of_birth" required>
+                </div>
             </div>
-            
             <div class="form-group">
-                <label>Password (min 6 characters):</label>
-                <input type="password" name="password" required>
+                <label>Password (min 6 characters)</label>
+                <div class="input-wrapper">
+                    <i class="fas fa-key"></i>
+                    <input type="password" name="password" required>
+                </div>
             </div>
-            
             <div class="form-group">
-                <label>Confirm Password:</label>
-                <input type="password" name="confirm_password" required>
+                <label>Confirm Password</label>
+                <div class="input-wrapper">
+                    <i class="fas fa-check-circle"></i>
+                    <input type="password" name="confirm_password" required>
+                </div>
             </div>
-            
-            <button type="submit">Register</button>
+            <button type="submit" class="register-btn"><i class="fas fa-user-plus"></i> Register Now</button>
         </form>
-        
-        <div class="login-link">
-            Already have an account? <a href="login.php">Login here</a>
-        </div>
+        <div class="login-link"><i class="fas fa-sign-in-alt"></i> Already have an account? <a href="login.php">Login here</a></div>
     </div>
 </body>
 </html>
