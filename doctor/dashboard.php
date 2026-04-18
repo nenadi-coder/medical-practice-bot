@@ -45,89 +45,194 @@ if (!$stats) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Doctor Dashboard</title>
+    <title>Doctor Dashboard | Medical Practice</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; background: #f7fafc; }
-        
-       .navbar {
-    background: #f56565;
-    color: white;
-    padding: 1rem 2rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 1rem;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-.logout {
-    background: #c53030;
-    padding: 0.5rem 1.2rem;
-    border-radius: 5px;
-    color: white;
-    text-decoration: none;
-    display: inline-block;
-    transition: all 0.2s ease;
-}
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(125deg, #e0f0ff 0%, #f5f0fc 100%);
+            min-height: 100vh;
+            color: #1e2a3e;
+        }
 
-.logout:hover {
-    background: #9b2c2c;
-    transform: translateY(-1px);
-}
-        
+        /* Modern Navbar */
+        .navbar {
+            background: white;
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            border-bottom: 1px solid rgba(245, 101, 101, 0.15);
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .navbar h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(120deg, #1e2a3e, #2d3a5e);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+        }
+
+        .navbar h1 i {
+            background: none;
+            background-clip: unset;
+            -webkit-background-clip: unset;
+            color: #f56565;
+            margin-right: 8px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            background: #f1f5f9;
+            padding: 0.5rem 1rem;
+            border-radius: 60px;
+        }
+
+        .user-info span {
+            font-weight: 600;
+            color: #1e2a3e;
+        }
+
+        .doctor-name {
+            color: #f56565;
+            font-weight: 700;
+        }
+
+        .logout {
+            background: #f56565;
+            padding: 0.5rem 1rem;
+            border-radius: 60px;
+            color: white;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .logout:hover {
+            background: #e53e3e;
+            transform: translateY(-1px);
+        }
+
+        /* Container */
         .container {
             max-width: 1200px;
             margin: 2rem auto;
-            padding: 0 1rem;
+            padding: 0 1.5rem;
         }
-        
+
+        /* Stats Grid */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
             gap: 1rem;
             margin-bottom: 2rem;
         }
-        
+
         .stat-card {
             background: white;
-            padding: 1.5rem;
-            border-radius: 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            padding: 1.2rem;
+            border-radius: 1.2rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
             text-align: center;
+            border: 1px solid rgba(245, 101, 101, 0.1);
+            transition: all 0.2s ease;
         }
-        
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+        }
+
         .stat-number {
             font-size: 2rem;
-            font-weight: bold;
-            color: #f56565;
+            font-weight: 800;
+            background: linear-gradient(95deg, #f56565, #e53e3e);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
         }
-        
+
+        .stat-label {
+            color: #5b6e8c;
+            margin-top: 0.4rem;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        /* Date Badge */
         .date-badge {
             background: white;
             padding: 1rem;
-            border-radius: 10px;
-            margin-bottom: 1rem;
+            border-radius: 1rem;
+            margin-bottom: 1.5rem;
             text-align: center;
-            font-size: 1.2rem;
-            font-weight: bold;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            font-size: 1rem;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            border: 1px solid rgba(245, 101, 101, 0.1);
+            color: #4a5568;
         }
-        
+
+        /* Section Header */
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 1.5rem;
+        }
+
+        .section-header h2 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #1e2a3e;
+        }
+
+        .section-header i {
+            color: #f56565;
+            font-size: 1.3rem;
+        }
+
+        /* Patients Grid */
         .patients-grid {
-            display: grid;
+            display: flex;
+            flex-direction: column;
             gap: 1rem;
         }
-        
+
         .patient-card {
             background: white;
             padding: 1.5rem;
-            border-radius: 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            border-radius: 1.2rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
             border-left: 4px solid #f56565;
+            transition: all 0.2s ease;
         }
-        
+
+        .patient-card:hover {
+            transform: translateX(4px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+        }
+
         .patient-header {
             display: flex;
             justify-content: space-between;
@@ -136,179 +241,231 @@ if (!$stats) {
             flex-wrap: wrap;
             gap: 0.5rem;
         }
-        
+
         .patient-name {
-            font-size: 1.3rem;
-            font-weight: bold;
-            color: #2d3748;
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #1e2a3e;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-        
+
         .status-badge {
-            padding: 0.25rem 0.75rem;
-            border-radius: 20px;
-            font-size: 0.875rem;
-            font-weight: bold;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 0.3rem 0.9rem;
+            border-radius: 60px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
         }
-        
+
         .status-scheduled { background: #e3f2fd; color: #1976d2; }
         .status-confirmed { background: #e8f5e8; color: #388e3c; }
         .status-completed { background: #f3e5f5; color: #7b1fa2; }
         .status-cancelled { background: #ffebee; color: #c62828; }
-        
+
         .patient-details {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1rem;
+            gap: 0.8rem;
             margin: 1rem 0;
             padding: 1rem 0;
-            border-top: 1px solid #eee;
-            border-bottom: 1px solid #eee;
+            border-top: 1px solid #e2e8f0;
+            border-bottom: 1px solid #e2e8f0;
         }
-        
+
         .detail-item {
             display: flex;
             align-items: center;
-            gap: 0.5rem;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: #4a5568;
         }
-        
+
+        .detail-item strong {
+            color: #2d3748;
+        }
+
+        .notes-preview {
+            background: #f8fafc;
+            padding: 0.75rem;
+            border-radius: 0.75rem;
+            margin: 0.75rem 0;
+            font-size: 0.85rem;
+            color: #4a5568;
+            border-left: 3px solid #f56565;
+        }
+
+        /* Action Buttons */
         .action-buttons {
             display: flex;
-            gap: 0.5rem;
+            gap: 0.75rem;
             flex-wrap: wrap;
             margin-top: 1rem;
         }
-        
+
         .btn {
-            padding: 0.5rem 1rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0.6rem 1.2rem;
             border: none;
-            border-radius: 5px;
+            border-radius: 60px;
             cursor: pointer;
             text-decoration: none;
-            font-size: 0.9rem;
-            color: white;
-            transition: transform 0.2s, opacity 0.2s;
+            font-size: 0.8rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
         }
-        
+
         .btn:hover {
             transform: translateY(-2px);
-            opacity: 0.9;
         }
-        
-        .btn-view { background: #4299e1; }
-        .btn-notes { background: #9f7aea; }
-        .btn-complete { background: #48bb78; }
-        .btn-prescribe { background: #ed8936; }
-        .btn-lab { background: #667eea; }
-        
-        .logout {
-            background: #c53030;
-            padding: 0.5rem 1rem;
-            border-radius: 5px;
-            color: white;
-            text-decoration: none;
-        }
-        
-        .logout:hover {
-            background: #9b2c2c;
-        }
-        
+
+        .btn-view { background: #4299e1; color: white; }
+        .btn-notes { background: #9f7aea; color: white; }
+        .btn-complete { background: #48bb78; color: white; }
+        .btn-prescribe { background: #ed8936; color: white; }
+        .btn-lab { background: #667eea; color: white; }
+
+        /* Empty State */
         .no-patients {
             text-align: center;
             padding: 3rem;
             background: white;
-            border-radius: 10px;
+            border-radius: 1.2rem;
+            border: 1px solid rgba(245, 101, 101, 0.1);
         }
-        
-        h2 {
+
+        .no-patients p {
+            color: #94a3b8;
+        }
+
+        .no-patients i {
+            font-size: 3rem;
+            color: #cbd5e0;
             margin-bottom: 1rem;
-            color: #2d3748;
         }
-        
-        .doctor-name {
-            font-weight: bold;
+
+        @media (max-width: 768px) {
+            .navbar {
+                flex-direction: column;
+                text-align: center;
+            }
+            .patient-details {
+                grid-template-columns: 1fr;
+            }
+            .action-buttons {
+                justify-content: center;
+            }
+            .container {
+                padding: 0 1rem;
+            }
         }
     </style>
 </head>
 <body>
- <div class="navbar">
-    <h1>👨‍⚕️ Doctor Dashboard</h1>
-    <div style="display: flex; align-items: center; gap: 1rem;">
-        <span>Welcome, <span class="doctor-name"><?php echo htmlspecialchars($_SESSION['doctor_name']); ?></span></span>
-        <a href="logout.php" class="logout">Logout</a>
+    <div class="navbar">
+        <h1><i class="fas fa-stethoscope"></i>Shifa Medical Center</h1>
+        <div class="user-info">
+            <i class="fas fa-user-md" style="color: #f56565;"></i>
+            <span>Welcome, <span class="doctor-name">Dr. <?php echo htmlspecialchars($_SESSION['doctor_name']); ?></span></span>
+            <a href="logout.php" class="logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
+        </div>
     </div>
-</div>
     
     <div class="container">
         <!-- Stats -->
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-number"><?php echo $stats['total']; ?></div>
-                <div>Total Today</div>
+                <div class="stat-label"><i class="fas fa-calendar-day"></i> Total Today</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number"><?php echo $stats['scheduled']; ?></div>
-                <div>Scheduled</div>
+                <div class="stat-label"><i class="fas fa-clock"></i> Scheduled</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number"><?php echo $stats['confirmed']; ?></div>
-                <div>Confirmed</div>
+                <div class="stat-label"><i class="fas fa-check-circle"></i> Confirmed</div>
             </div>
             <div class="stat-card">
                 <div class="stat-number"><?php echo $stats['completed']; ?></div>
-                <div>Completed</div>
+                <div class="stat-label"><i class="fas fa-flag-checkered"></i> Completed</div>
             </div>
         </div>
         
         <!-- Date -->
         <div class="date-badge">
-            📅 <?php echo date('l, F j, Y'); ?>
+            <i class="fas fa-calendar-alt"></i> <?php echo date('l, F j, Y'); ?>
         </div>
         
         <!-- Patients List -->
-        <div class="patients-grid">
+        <div class="section-header">
+            <i class="fas fa-users"></i>
             <h2>Today's Patients</h2>
-            
+        </div>
+        
+        <div class="patients-grid">
             <?php if (count($today_appointments) > 0): ?>
                 <?php foreach($today_appointments as $apt): ?>
                 <div class="patient-card">
                     <div class="patient-header">
-                        <span class="patient-name">👤 <?php echo htmlspecialchars($apt['patient_name']); ?></span>
+                        <span class="patient-name">
+                            <i class="fas fa-user-circle" style="color: #f56565;"></i>
+                            <?php echo htmlspecialchars($apt['patient_name']); ?>
+                        </span>
                         <span class="status-badge status-<?php echo $apt['status']; ?>">
+                            <i class="fas <?php echo $apt['status'] == 'scheduled' ? 'fa-clock' : ($apt['status'] == 'confirmed' ? 'fa-check-circle' : 'fa-flag-checkered'); ?>"></i>
                             <?php echo ucfirst($apt['status']); ?>
                         </span>
                     </div>
                     
                     <div class="patient-details">
-                        <div class="detail-item">🕒 <strong>Time:</strong> <?php echo date('g:i A', strtotime($apt['appointment_time'])); ?></div>
-                        <div class="detail-item">📞 <strong>Phone:</strong> <?php echo htmlspecialchars($apt['patient_phone'] ?? 'N/A'); ?></div>
-                        <div class="detail-item">🎫 <strong>Queue #:</strong> <?php echo $apt['queue_number'] ?? 'N/A'; ?></div>
-                        <div class="detail-item">📧<strong>Email:</strong><?php echo htmlspecialchars($apt['patient_email']); ?></div>
-                          <div class="detail-item"> 🎂 <strong>DOB:</strong> <?php echo $apt['date_of_birth'] ? date('M j, Y', strtotime($apt['date_of_birth'])) : 'N/A'; ?></div>
+                        <div class="detail-item"><i class="far fa-clock"></i> <strong>Time:</strong> <?php echo date('g:i A', strtotime($apt['appointment_time'])); ?></div>
+                        <div class="detail-item"><i class="fas fa-phone"></i> <strong>Phone:</strong> <?php echo htmlspecialchars($apt['patient_phone'] ?? 'N/A'); ?></div>
+                        <div class="detail-item"><i class="fas fa-ticket-alt"></i> <strong>Queue #:</strong> <?php echo $apt['queue_number'] ?? 'N/A'; ?></div>
+                        <div class="detail-item"><i class="fas fa-envelope"></i> <strong>Email:</strong> <?php echo htmlspecialchars($apt['patient_email']); ?></div>
+                        <div class="detail-item"><i class="fas fa-birthday-cake"></i> <strong>DOB:</strong> <?php echo $apt['date_of_birth'] ? date('M j, Y', strtotime($apt['date_of_birth'])) : 'N/A'; ?></div>
                     </div>
                     
                     <?php if ($apt['notes']): ?>
-                        <div style="background: #f7fafc; padding: 0.75rem; border-radius: 5px; margin: 0.5rem 0;">
-                            <strong>📝 Notes:</strong> <?php echo htmlspecialchars($apt['notes']); ?>
+                        <div class="notes-preview">
+                            <i class="fas fa-pencil-alt"></i> <strong>Notes:</strong> <?php echo htmlspecialchars($apt['notes']); ?>
                         </div>
                     <?php endif; ?>
                     
                     <div class="action-buttons">
-                        <a href="view_patient.php?patient_id=<?php echo $apt['patient_id']; ?>" class="btn btn-view">👁️ View Profile</a>
-                        <a href="add_notes.php?patient_id=<?php echo $apt['patient_id']; ?>&appointment_id=<?php echo $apt['appointment_id']; ?>" class="btn btn-notes">📝 Add Notes</a>
+                        <a href="view_patient.php?patient_id=<?php echo $apt['patient_id']; ?>" class="btn btn-view">
+                            <i class="fas fa-eye"></i> View Profile
+                        </a>
+                        <a href="add_notes.php?patient_id=<?php echo $apt['patient_id']; ?>&appointment_id=<?php echo $apt['appointment_id']; ?>" class="btn btn-notes">
+                            <i class="fas fa-notes-medical"></i> Add Notes
+                        </a>
                         
                         <?php if ($apt['status'] != 'completed'): ?>
-                            <a href="mark_complete.php?appointment_id=<?php echo $apt['appointment_id']; ?>&patient_id=<?php echo $apt['patient_id']; ?>" class="btn btn-complete" onclick="return confirm('Mark this appointment as completed?')">✓ Complete</a>
+                            <a href="mark_complete.php?appointment_id=<?php echo $apt['appointment_id']; ?>&patient_id=<?php echo $apt['patient_id']; ?>" class="btn btn-complete" onclick="return confirm('Mark this appointment as completed?')">
+                                <i class="fas fa-check-double"></i> Complete
+                            </a>
                         <?php endif; ?>
                         
-                        <a href="prescribe.php?patient_id=<?php echo $apt['patient_id']; ?>&appointment_id=<?php echo $apt['appointment_id']; ?>" class="btn btn-prescribe">💊 Prescribe</a>
-                        <a href="lab_test.php?patient_id=<?php echo $apt['patient_id']; ?>&appointment_id=<?php echo $apt['appointment_id']; ?>" class="btn btn-lab">🔬 Lab Test</a>
+                        <a href="prescribe.php?patient_id=<?php echo $apt['patient_id']; ?>&appointment_id=<?php echo $apt['appointment_id']; ?>" class="btn btn-prescribe">
+                            <i class="fas fa-prescription-bottle"></i> Prescribe
+                        </a>
+                        <a href="lab_test.php?patient_id=<?php echo $apt['patient_id']; ?>&appointment_id=<?php echo $apt['appointment_id']; ?>" class="btn btn-lab">
+                            <i class="fas fa-flask"></i> Lab Test
+                        </a>
                     </div>
                 </div>
                 <?php endforeach; ?>
             <?php else: ?>
                 <div class="no-patients">
-                    <p style="font-size: 1.2rem; color: #666;">No patients scheduled for today</p>
-                    <p style="margin-top: 1rem; color: #999;">Enjoy your day! 🎉</p>
+                    <i class="fas fa-calendar-check"></i>
+                    <p style="font-size: 1rem; margin-top: 0.5rem;">No patients scheduled for today</p>
+                    <p style="font-size: 0.85rem; margin-top: 0.5rem; color: #cbd5e0;">Enjoy your day! 🎉</p>
                 </div>
             <?php endif; ?>
         </div>
