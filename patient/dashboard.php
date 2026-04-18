@@ -52,258 +52,387 @@ $appointments = $stmt->fetchAll();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Patient Dashboard</title>
+    <title>Patient Dashboard | Medical Practice</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; background: #f4f4f4; }
-        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(125deg, #e0f0ff 0%, #f5f0fc 100%);
+            min-height: 100vh;
+            color: #1e2a3e;
+        }
+
+        /* Modern Navbar */
         .navbar {
-            background: #667eea;
-            color: white;
+            background: white;
+            backdrop-filter: blur(10px);
             padding: 1rem 2rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            border-bottom: 1px solid rgba(102, 126, 234, 0.15);
             flex-wrap: wrap;
             gap: 1rem;
         }
-        
+
+        .navbar h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(120deg, #1e2a3e, #2d3a5e);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+        }
+
+        .navbar h1 i {
+            background: none;
+            background-clip: unset;
+            -webkit-background-clip: unset;
+            color: #4f46e5;
+            margin-right: 8px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            background: #f1f5f9;
+            padding: 0.5rem 1rem;
+            border-radius: 60px;
+        }
+
+        .user-info span {
+            font-weight: 600;
+            color: #1e2a3e;
+        }
+
+        .logout {
+            background: #f56565;
+            padding: 0.5rem 1.2rem;
+            border-radius: 60px;
+            color: white;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .logout:hover {
+            background: #e53e3e;
+            transform: translateY(-1px);
+        }
+
+        /* Container */
         .container {
             max-width: 1200px;
             margin: 2rem auto;
-            padding: 0 1rem;
+            padding: 0 1.5rem;
         }
-        
+
+        /* Welcome Card */
         .welcome-card {
             background: white;
-            padding: 2rem;
-            border-radius: 10px;
+            padding: 1.8rem 2rem;
+            border-radius: 1.5rem;
             margin-bottom: 2rem;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            box-shadow: 0 8px 25px -12px rgba(0, 0, 0, 0.1);
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
             gap: 1rem;
+            border: 1px solid rgba(102, 126, 234, 0.15);
         }
-        
-        .appointments-grid {
-            display: grid;
-            gap: 1rem;
+
+        .welcome-card h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1e2a3e;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-        
-        .appointment-card {
-            background: white;
-            padding: 1.5rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            border-left: 4px solid #667eea;
-            position: relative;
+
+        .btn-group {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
         }
-        
-        .appointment-card.cancelled {
-            border-left-color: #f56565;
-            opacity: 0.7;
-            background: #fef5f5;
-        }
-        
-        .appointment-card.completed {
-            border-left-color: #48bb78;
-        }
-        
-        .status {
-            display: inline-block;
-            padding: 0.25rem 0.75rem;
-            border-radius: 20px;
-            font-size: 0.875rem;
-            font-weight: bold;
-        }
-        
-        .status-scheduled { background: #e3f2fd; color: #1976d2; }
-        .status-confirmed { background: #e8f5e8; color: #388e3c; }
-        .status-completed { background: #f3e5f5; color: #7b1fa2; }
-        .status-cancelled { background: #ffebee; color: #c62828; }
-        
+
         .btn {
-            display: inline-block;
-            padding: 0.5rem 1rem;
-            background: #667eea;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 0.7rem 1.3rem;
+            background: linear-gradient(95deg, #4f46e5, #7c3aed);
             color: white;
             text-decoration: none;
-            border-radius: 5px;
-            margin-top: 1rem;
-            margin-right: 0.5rem;
+            border-radius: 60px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.25s ease;
             border: none;
             cursor: pointer;
-            font-size: 0.9rem;
         }
-        
-        .btn:hover { background: #5a67d8; }
-        
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(79, 70, 229, 0.3);
+        }
+
+        .btn-telegram {
+            background: linear-gradient(95deg, #0088cc, #00a6e6);
+        }
+
+        .btn-telegram:hover {
+            box-shadow: 0 8px 20px rgba(0, 136, 204, 0.3);
+        }
+
         .btn-cancel {
             background: #f56565;
         }
-        
+
         .btn-cancel:hover {
             background: #e53e3e;
         }
-        
-        .btn-telegram {
-            background: #667eea;
-            color: white;
-        }
-        
-        .btn-telegram:hover {
-            background: #5a67d8;
-        }
-        
+
         .btn-disabled {
             background: #cbd5e0;
             cursor: not-allowed;
             pointer-events: none;
+            opacity: 0.6;
         }
-        
-        .logout {
-            background: #f56565;
-            padding: 0.5rem 1rem;
-            border-radius: 5px;
-            color: white;
-            text-decoration: none;
-        }
-        
+
+        /* Messages */
         .message {
-            padding: 1rem;
-            border-radius: 5px;
-            margin-bottom: 1rem;
+            padding: 1rem 1.2rem;
+            border-radius: 1rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 500;
         }
-        
+
         .success {
             background: #e8f5e8;
             color: #2e7d32;
-            border: 1px solid #a5d6a7;
+            border-left: 4px solid #48bb78;
         }
-        
+
         .error {
             background: #ffebee;
             color: #c62828;
-            border: 1px solid #ffcdd2;
+            border-left: 4px solid #f56565;
         }
-        
-        .appointment-actions {
-            margin-top: 1rem;
+
+        /* Appointments Grid */
+        .appointments-grid {
             display: flex;
-            gap: 0.5rem;
-            flex-wrap: wrap;
+            flex-direction: column;
+            gap: 1.25rem;
         }
-        
-        /* Queue Information Styles */
-        .queue-info {
-            background: #f0f9ff;
-            padding: 12px;
-            border-radius: 5px;
-            margin: 10px 0;
-            border-left: 3px solid #667eea;
+
+        .appointment-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 1.25rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            border-left: 5px solid #4f46e5;
+            transition: all 0.2s ease;
         }
-        
-        .queue-position {
-            font-size: 1.1em;
-            color: #2c3e50;
-            margin: 5px 0;
-            font-weight: bold;
+
+        .appointment-card:hover {
+            transform: translateX(4px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
         }
-        
-        .wait-time {
-            color: #e67e22;
-            font-weight: bold;
-            margin: 5px 0;
-            padding: 5px;
-            background: #fff3e0;
-            border-radius: 3px;
+
+        .appointment-card.cancelled {
+            border-left-color: #f56565;
+            opacity: 0.75;
+            background: #fefaf9;
         }
-        
-        .next-message {
-            color: #48bb78;
-            font-weight: bold;
-            margin: 5px 0;
-            padding: 5px;
-            background: #f0fff4;
-            border-radius: 3px;
+
+        .appointment-card.completed {
+            border-left-color: #48bb78;
         }
-        
+
         .appointment-header {
             display: flex;
             justify-content: space-between;
-            align-items: start;
-            margin-bottom: 10px;
+            align-items: flex-start;
             flex-wrap: wrap;
-            gap: 0.5rem;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
         }
-        
+
         .doctor-name {
-            color: #2c3e50;
-            margin-bottom: 10px;
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #1e2a3e;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-        
+
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0.3rem 0.9rem;
+            border-radius: 60px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-scheduled { background: #e3f2fd; color: #1976d2; }
+        .status-confirmed { background: #e8f5e8; color: #388e3c; }
+        .status-completed { background: #f3e5f5; color: #7b1fa2; }
+        .status-cancelled { background: #ffebee; color: #c62828; }
+
         .appointment-details {
             color: #4a5568;
-            line-height: 1.6;
+            line-height: 1.7;
+            margin-bottom: 1rem;
         }
-        
+
         .detail-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 8px 0;
+            font-size: 0.9rem;
+        }
+
+        /* Queue Info Styles */
+        .queue-info {
+            background: linear-gradient(135deg, #f0f9ff, #eef2ff);
+            padding: 1rem;
+            border-radius: 1rem;
+            margin: 1rem 0;
+            border: 1px solid rgba(79, 70, 229, 0.2);
+        }
+
+        .queue-position {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #4f46e5;
             margin: 5px 0;
         }
-        
+
+        .wait-time {
+            background: #fff3e0;
+            padding: 8px 12px;
+            border-radius: 0.75rem;
+            color: #e67e22;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+
+        .next-message {
+            background: #f0fff4;
+            padding: 8px 12px;
+            border-radius: 0.75rem;
+            color: #48bb78;
+            font-weight: 700;
+            margin-top: 8px;
+        }
+
+        .appointment-actions {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            background: white;
+            border-radius: 1.5rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        .empty-state p {
+            font-size: 1.1rem;
+            color: #5b6e8c;
+            margin-bottom: 1.5rem;
+        }
+
         @media (max-width: 768px) {
             .navbar {
                 flex-direction: column;
                 text-align: center;
             }
-            
             .welcome-card {
                 flex-direction: column;
                 text-align: center;
             }
-            
+            .btn-group {
+                justify-content: center;
+            }
             .appointment-header {
                 flex-direction: column;
-                align-items: flex-start;
             }
-            
             .appointment-actions {
                 flex-direction: column;
             }
-            
             .btn {
-                width: 100%;
-                text-align: center;
-                margin-right: 0;
+                justify-content: center;
+            }
+            .container {
+                padding: 0 1rem;
             }
         }
     </style>
 </head>
 <body>
     <div class="navbar">
-        <h1>🏥 Patient Dashboard</h1>
-        <div>
+        <h1><i class="fas fa-stethoscope"></i> Shifa Medical Center</h1>
+        <div class="user-info">
+            <i class="fas fa-user-circle" style="color: #4f46e5; font-size: 1.2rem;"></i>
             <span>Welcome, <?php echo htmlspecialchars($_SESSION['patient_name']); ?></span>
-            <a href="logout.php" class="logout">Logout</a>
+            <a href="logout.php" class="logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
         </div>
     </div>
     
     <div class="container">
         <?php if (isset($success)): ?>
-            <div class="message success"><?php echo $success; ?></div>
+            <div class="message success">
+                <i class="fas fa-check-circle"></i> <?php echo $success; ?>
+            </div>
         <?php endif; ?>
         
         <?php if (isset($error)): ?>
-            <div class="message error"><?php echo $error; ?></div>
+            <div class="message error">
+                <i class="fas fa-exclamation-circle"></i> <?php echo $error; ?>
+            </div>
         <?php endif; ?>
         
         <div class="welcome-card">
-            <h2>My Appointments</h2>
-            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                <a href="https://t.me/Medical_Practice_Bot" target="_blank" class="btn btn-telegram">📱 Telegram Bot</a>
-                <a href="book_appointment.php" class="btn">📅 Book New Appointment</a>
+            <h2><i class="fas fa-calendar-check" style="color: #4f46e5;"></i> My Appointments</h2>
+            <div class="btn-group">
+                <a href="https://t.me/Medical_Practice_Bot" target="_blank" class="btn btn-telegram">
+                    <i class="fab fa-telegram"></i> Telegram Bot
+                </a>
+                <a href="book_appointment.php" class="btn">
+                    <i class="fas fa-plus-circle"></i> Book New Appointment
+                </a>
             </div>
         </div>
         
@@ -315,20 +444,22 @@ $appointments = $stmt->fetchAll();
                         <?php echo $appointment['status'] == 'completed' ? 'completed' : ''; ?>
                     ">
                         <div class="appointment-header">
-                            <h2 class="doctor-name">Dr. <?php echo htmlspecialchars($appointment['doctor_name']); ?></h2>
+                            <div class="doctor-name">
+                                <i class="fas fa-user-md" style="color: #4f46e5;"></i>
+                                Dr. <?php echo htmlspecialchars($appointment['doctor_name']); ?>
+                            </div>
                             <span class="status status-<?php echo $appointment['status']; ?>">
+                                <i class="fas <?php echo $appointment['status'] == 'scheduled' ? 'fa-clock' : ($appointment['status'] == 'confirmed' ? 'fa-check-circle' : ($appointment['status'] == 'completed' ? 'fa-flag-checkered' : 'fa-ban')); ?>"></i>
                                 <?php echo ucfirst($appointment['status']); ?>
                             </span>
                         </div>
                         
                         <div class="appointment-details">
-                            <div class="detail-item">📅 Date: <?php echo date('F j, Y', strtotime($appointment['appointment_date'])); ?></div>
-                            <div class="detail-item">⏰ Time: <?php echo date('g:i A', strtotime($appointment['appointment_time'])); ?></div>
+                            <div class="detail-item"><i class="far fa-calendar-alt"></i> <?php echo date('F j, Y', strtotime($appointment['appointment_date'])); ?></div>
+                            <div class="detail-item"><i class="far fa-clock"></i> <?php echo date('g:i A', strtotime($appointment['appointment_time'])); ?></div>
                             
-                            <!-- QUEUE POSITION SECTION - Shows for active appointments -->
                             <?php if ($appointment['status'] == 'scheduled' || $appointment['status'] == 'confirmed'): ?>
                                 <?php
-                                // Calculate how many people are ahead in queue
                                 $queue_sql = "SELECT COUNT(*) as people_ahead FROM appointments 
                                               WHERE appointment_date = ? 
                                               AND queue_number < ? 
@@ -343,7 +474,6 @@ $appointments = $stmt->fetchAll();
                                 $queue_data = $queue_stmt->fetch();
                                 $people_ahead = $queue_data['people_ahead'];
                                 
-                                // Get total waiting for the day
                                 $total_sql = "SELECT COUNT(*) as total FROM appointments 
                                               WHERE appointment_date = ? 
                                               AND status IN ('scheduled', 'confirmed')";
@@ -354,74 +484,74 @@ $appointments = $stmt->fetchAll();
                                 ?>
                                 
                                 <div class="queue-info">
-                                    <div class="detail-item">🎫 Queue #: <strong><?php echo $appointment['queue_number']; ?></strong></div>
+                                    <div class="detail-item"><i class="fas fa-ticket-alt"></i> Queue #: <strong><?php echo $appointment['queue_number']; ?></strong></div>
                                     <div class="queue-position">
                                         📊 Position: <?php echo $people_ahead + 1; ?> of <?php echo $total_waiting; ?> waiting
                                     </div>
-                                    <div class="detail-item">👥 People ahead: <?php echo $people_ahead; ?></div>
+                                    <div class="detail-item"><i class="fas fa-users"></i> People ahead: <?php echo $people_ahead; ?></div>
                                     
                                     <?php if ($people_ahead > 0): ?>
                                         <div class="wait-time">
-                                            ⏱️ Estimated wait: ~<?php echo $people_ahead * 15; ?> minutes
+                                            <i class="fas fa-hourglass-half"></i> Estimated wait: ~<?php echo $people_ahead * 15; ?> minutes
                                             <br><small>(based on 15 min per patient)</small>
                                         </div>
                                     <?php else: ?>
                                         <div class="next-message">
-                                            ✅ You're NEXT! Please be ready when called.
+                                            <i class="fas fa-bell"></i> You're NEXT! Please be ready when called.
                                         </div>
                                     <?php endif; ?>
                                 </div>
                             <?php else: ?>
                                 <?php if ($appointment['queue_number']): ?>
-                                    <div class="detail-item">🎫 Queue #: <?php echo $appointment['queue_number']; ?></div>
+                                    <div class="detail-item"><i class="fas fa-ticket-alt"></i> Queue #: <?php echo $appointment['queue_number']; ?></div>
                                 <?php endif; ?>
                             <?php endif; ?>
                             
                             <?php if ($appointment['notes']): ?>
-                                <div class="detail-item">📝 Notes: <?php echo htmlspecialchars($appointment['notes']); ?></div>
+                                <div class="detail-item"><i class="fas fa-pencil-alt"></i> Notes: <?php echo htmlspecialchars($appointment['notes']); ?></div>
                             <?php endif; ?>
                             
-                            <div class="detail-item">📅 Booked on: <?php echo date('F j, Y', strtotime($appointment['created_at'])); ?></div>
+                            <div class="detail-item"><i class="fas fa-calendar-plus"></i> Booked on: <?php echo date('F j, Y', strtotime($appointment['created_at'])); ?></div>
                         </div>
                         
-                        <!-- Action buttons -->
                         <div class="appointment-actions">
                             <?php if ($appointment['status'] == 'scheduled' || $appointment['status'] == 'confirmed'): ?>
                                 <a href="?cancel_id=<?php echo $appointment['appointment_id']; ?>" 
                                    class="btn btn-cancel"
                                    onclick="return confirm('Are you sure you want to cancel this appointment? This action cannot be undone.');">
-                                    ❌ Cancel
+                                    <i class="fas fa-times-circle"></i> Cancel
                                 </a>
-                                <a href="reschedule.php?id=<?php echo $appointment['appointment_id']; ?>" 
-                                   class="btn">
-                                    📅 Reschedule
+                                <a href="reschedule.php?id=<?php echo $appointment['appointment_id']; ?>" class="btn">
+                                    <i class="fas fa-calendar-week"></i> Reschedule
                                 </a>
-                                <a href="details.php?id=<?php echo $appointment['appointment_id']; ?>" 
-                                   class="btn">
-                                    👁️ View Details
+                                <a href="details.php?id=<?php echo $appointment['appointment_id']; ?>" class="btn">
+                                    <i class="fas fa-eye"></i> View Details
                                 </a>
                             <?php elseif ($appointment['status'] == 'cancelled'): ?>
-                                <span class="btn btn-disabled">❌ Cancelled</span>
-                                <a href="book_appointment.php" class="btn">📅 Book New</a>
+                                <span class="btn btn-disabled"><i class="fas fa-ban"></i> Cancelled</span>
+                                <a href="book_appointment.php" class="btn"><i class="fas fa-plus-circle"></i> Book New</a>
                             <?php elseif ($appointment['status'] == 'completed'): ?>
-                                <span class="btn btn-disabled">✅ Completed</span>
-                                <a href="details.php?id=<?php echo $appointment['appointment_id']; ?>" class="btn">👁️ View Details</a>
-                                <a href="book_appointment.php" class="btn">📅 Book New</a>
+                                <span class="btn btn-disabled"><i class="fas fa-check-circle"></i> Completed</span>
+                                <a href="details.php?id=<?php echo $appointment['appointment_id']; ?>" class="btn"><i class="fas fa-eye"></i> View Details</a>
+                                <a href="book_appointment.php" class="btn"><i class="fas fa-plus-circle"></i> Book New</a>
                             <?php endif; ?>
                         </div>
                     </div>
                 <?php endforeach; ?>
             <?php else: ?>
-                <div style="text-align: center; padding: 3rem; background: white; border-radius: 8px;">
-                    <p style="font-size: 1.2rem; color: #666; margin-bottom: 1rem;">No appointments found.</p>
-                    <a href="book_appointment.php" class="btn" style="font-size: 1.1rem; padding: 0.75rem 2rem;">📅 Book Your First Appointment</a>
+                <div class="empty-state">
+                    <i class="fas fa-calendar-times" style="font-size: 3rem; color: #cbd5e0; margin-bottom: 1rem; display: inline-block;"></i>
+                    <p>No appointments found. Start your healthcare journey with us!</p>
+                    <a href="book_appointment.php" class="btn" style="font-size: 1rem; padding: 0.8rem 1.8rem;">
+                        <i class="fas fa-calendar-plus"></i> Book Your First Appointment
+                    </a>
                 </div>
             <?php endif; ?>
         </div>
     </div>
     
     <script>
-        // Add custom cancel confirmation
+        // Cancel confirmation is handled inline with onclick, but adding extra safety
         document.querySelectorAll('.btn-cancel').forEach(button => {
             button.addEventListener('click', function(e) {
                 if (!confirm('Are you sure you want to cancel this appointment? This action cannot be undone.')) {
