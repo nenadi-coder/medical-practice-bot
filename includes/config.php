@@ -1,10 +1,10 @@
 <?php
 session_start();
 
-$host = 'sql207.infinityfree.com';
-$dbname = 'if0_41555171_medical_practice';
-$username = 'if0_41555171';
-$password = 'fkwDocFNbnScb0';
+$host = 'db-mysql-nyc3-10499-do-user-36185384-0.e.db.ondigitalocean.com';
+$dbname = 'defaultdb';
+$username = 'doadmin';
+$password = 'AVNS_xAlHu7MeZoKMxKJ7Esn';
 
 try {
     $pdo = new PDO(
