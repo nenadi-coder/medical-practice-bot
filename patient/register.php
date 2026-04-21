@@ -1,4 +1,4 @@
-is this the same as the file <?php
+<?php
 
 require_once '../includes/config.php';
 
@@ -554,4 +554,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     </div>
 </body>
-</html>  am not talken about this  // $syncStatus = '✅ Patient synced to Telegram database.';
+</html> 
