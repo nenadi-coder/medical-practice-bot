@@ -18,7 +18,7 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute([$tomorrow]);
 $appointments = $stmt->fetchAll();
 
-$bot_token = 'YOUR_BOT_TOKEN_HERE'; // Your actual token
+$bot_token = '8330456846:AAFJFM3cy7rbKr5diPbcYi8QaIDDIhktpVU'; 
 
 foreach ($appointments as $apt) {
     $message = "🏥 *Appointment Reminder*\n\n";
