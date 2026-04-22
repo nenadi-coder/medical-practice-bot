@@ -5,7 +5,7 @@ $host = 'db-mysql-nyc3-10499-do-user-36185384-0.e.db.ondigitalocean.com';
 $dbname = 'defaultdb';
 $username = 'doadmin';
 $password = 'AVNS_xAlHu7MeZoKMxKJ7Esn';
-
+$port = "25060";
 try {
     $pdo = new PDO(
         "mysql:host=$host;dbname=$dbname;charset=utf8",
