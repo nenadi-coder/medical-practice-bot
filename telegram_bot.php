@@ -1,7 +1,7 @@
 <?php
 require_once 'includes/config.php';
 
-$bot_token = 'YOUR_BOT_TOKEN_HERE'; // ← Put your actual token here!
+$bot_token = '8330456846:AAFJFM3cy7rbKr5diPbcYi8QaIDDIhktpVU'; 
 
 $content = file_get_contents('php://input');
 $update = json_decode($content, true);
