@@ -1,4 +1,5 @@
 <?php
+echo "Job started at " . date('Y-m-d H:i:s') . "\n";
 require_once 'includes/config.php';
 
 // Get appointments for tomorrow
