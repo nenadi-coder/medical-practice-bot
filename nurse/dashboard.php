@@ -1,8 +1,9 @@
 <?php
-session_start(); // ADDED - FIXES SESSION ISSUES
+session_start();
 require_once '../includes/config.php';
 
-// ========== SMS FUNCTION ==========
+// ========== SMS FUNCTION - ADDED ==========
+// REPLACE WITH YOUR EASYSENDSMS CREDENTIALS
 define('EASYSENDSMS_USERNAME', 'nadoouamhou6s2026');
 define('EASYSENDSMS_API_KEY', 'IBxpv37c');
 
@@ -10,6 +11,7 @@ function sendSMS($phoneNumber, $message) {
     $username = EASYSENDSMS_USERNAME;
     $apiKey = EASYSENDSMS_API_KEY;
     
+    // Format phone number for Algeria: remove leading zeros, add 213
     $phoneNumber = preg_replace('/^0+/', '', $phoneNumber);
     if (!preg_match('/^213/', $phoneNumber)) {
         $phoneNumber = '213' . $phoneNumber;
@@ -41,6 +43,7 @@ function sendSMS($phoneNumber, $message) {
     
     return $response && strpos($response, 'OK:') === 0;
 }
+// ========== END OF SMS FUNCTION ==========
 
 // Check if nurse is logged in
 if (!isset($_SESSION['nurse_id'])) {
@@ -57,6 +60,7 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
     $action = $_GET['action'];
     $nurse_id = $_SESSION['nurse_id'];
     
+    // Verify appointment exists
     $check_sql = "SELECT appointment_id FROM appointments WHERE appointment_id = ?";
     $check_stmt = $pdo->prepare($check_sql);
     $check_stmt->execute([$appointment_id]);
@@ -70,6 +74,8 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
                 $new_status = 'confirmed';
                 $message = 'Appointment confirmed successfully';
                 
+                // ========== SMS SENT WHEN NURSE CONFIRMS ==========
+                // Get patient phone and SMS preference
                 $apt_sql = "SELECT a.send_sms, p.phone, p.first_name, p.last_name, 
                                    d.first_name as doctor_first, d.last_name as doctor_last,
                                    a.appointment_date, a.appointment_time, a.queue_number
@@ -81,19 +87,22 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
                 $apt_stmt->execute([$appointment_id]);
                 $apt = $apt_stmt->fetch();
                 
+                // Send SMS only if patient requested it (send_sms = 1)
                 if ($apt && $apt['send_sms'] == 1) {
+                    // Short message to save credits
                     $date = date('d/m', strtotime($apt['appointment_date']));
                     $time = date('H:i', strtotime($apt['appointment_time']));
                     $smsMessage = "✅ Appt confirmed: $date at $time with Dr. {$apt['doctor_last']}. Queue #{$apt['queue_number']}";
                     
                     if (sendSMS($apt['phone'], $smsMessage)) {
-                        $message .= " & SMS sent";
+                        $message .= " & SMS sent to patient";
                     } else {
-                        $message .= " (SMS failed)";
+                        $message .= " but SMS failed to send";
                     }
                 } elseif ($apt && $apt['send_sms'] == 0) {
-                    $message .= " (No SMS requested)";
+                    $message .= " (Patient did not request SMS)";
                 }
+                // ========== END OF SMS ADDITION ==========
                 break;
             case 'cancel':
                 $new_status = 'cancelled';
@@ -121,11 +130,11 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
     } else {
         $_SESSION['error'] = 'Invalid appointment';
     }
-    header('Location: dashboard.php?filter=' . urlencode($_GET['filter'] ?? 'today'));
+    header('Location: dashboard.php');
     exit();
 }
 
-// Get filter from URL
+// Get filter from URL (today, tomorrow, all)
 $filter = isset($_GET['filter']) ? $_GET['filter'] : 'today';
 $date_filter = $today;
 
@@ -137,7 +146,7 @@ if ($filter == 'tomorrow') {
 
 // Build query based on filter
 if ($filter == 'all') {
-    $sql = "SELECT a.*, a.send_sms,
+    $sql = "SELECT a.*, 
             CONCAT(p.first_name, ' ', p.last_name) as patient_name,
             p.phone as patient_phone,
             CONCAT(d.first_name, ' ', d.last_name) as doctor_name
@@ -148,7 +157,7 @@ if ($filter == 'all') {
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
 } else {
-    $sql = "SELECT a.*, a.send_sms,
+    $sql = "SELECT a.*, 
             CONCAT(p.first_name, ' ', p.last_name) as patient_name,
             p.phone as patient_phone,
             CONCAT(d.first_name, ' ', d.last_name) as doctor_name
@@ -198,13 +207,20 @@ if (!$stats) {
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: 'Inter', sans-serif;
             background: linear-gradient(125deg, #e0f0ff 0%, #f5f0fc 100%);
             min-height: 100vh;
             color: #1e2a3e;
         }
+
+        /* Modern Navbar */
         .navbar {
             background: white;
             backdrop-filter: blur(10px);
@@ -217,56 +233,310 @@ if (!$stats) {
             flex-wrap: wrap;
             gap: 1rem;
         }
-        .navbar h1 { font-size: 1.5rem; font-weight: 700; background: linear-gradient(120deg, #1e2a3e, #2d3a5e); background-clip: text; -webkit-background-clip: text; color: transparent; }
-        .navbar h1 i { background: none; color: #4f46e5; margin-right: 8px; }
-        .user-info { display: flex; align-items: center; gap: 1rem; background: #f1f5f9; padding: 0.5rem 1rem; border-radius: 60px; }
-        .user-info span { font-weight: 600; color: #1e2a3e; }
-        .logout { background: #f56565; padding: 0.5rem 1rem; border-radius: 60px; color: white; text-decoration: none; font-weight: 600; font-size: 0.85rem; transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px; }
-        .logout:hover { background: #e53e3e; transform: translateY(-1px); }
-        .container { max-width: 1400px; margin: 2rem auto; padding: 0 1.5rem; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-        .stat-card { background: white; padding: 1.2rem; border-radius: 1.2rem; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); text-align: center; border: 1px solid rgba(102, 126, 234, 0.1); transition: all 0.2s ease; }
-        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08); }
-        .stat-number { font-size: 2rem; font-weight: 800; background: linear-gradient(95deg, #4f46e5, #7c3aed); background-clip: text; -webkit-background-clip: text; color: transparent; }
-        .stat-label { color: #5b6e8c; margin-top: 0.4rem; font-size: 0.8rem; font-weight: 500; }
-        .filter-bar { background: white; padding: 1rem 1.5rem; border-radius: 1.2rem; margin-bottom: 2rem; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; border: 1px solid rgba(102, 126, 234, 0.1); }
-        .filter-btn { padding: 0.5rem 1.2rem; border: none; border-radius: 60px; cursor: pointer; text-decoration: none; background: #f1f5f9; color: #1e2a3e; font-weight: 600; font-size: 0.85rem; transition: all 0.2s ease; }
-        .filter-btn.active { background: linear-gradient(95deg, #4f46e5, #7c3aed); color: white; }
-        .filter-btn:hover:not(.active) { background: #e2e8f0; }
-        .filter-info { margin-left: auto; font-size: 0.85rem; color: #5b6e8c; }
-        .appointments-table { background: white; border-radius: 1.2rem; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); overflow-x: auto; border: 1px solid rgba(102, 126, 234, 0.1); }
-        table { width: 100%; border-collapse: collapse; min-width: 900px; }
-        th { background: linear-gradient(95deg, #4f46e5, #7c3aed); color: white; padding: 1rem; text-align: left; font-weight: 600; font-size: 0.85rem; }
-        td { padding: 1rem; border-bottom: 1px solid #e2e8f0; font-size: 0.85rem; }
-        tr:hover { background: #f8fafc; }
-        .status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 0.25rem 0.75rem; border-radius: 60px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
+
+        .navbar h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(120deg, #1e2a3e, #2d3a5e);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+        }
+
+        .navbar h1 i {
+            background: none;
+            color: #4f46e5;
+            margin-right: 8px;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            background: #f1f5f9;
+            padding: 0.5rem 1rem;
+            border-radius: 60px;
+        }
+
+        .user-info span {
+            font-weight: 600;
+            color: #1e2a3e;
+        }
+
+        .logout {
+            background: #f56565;
+            padding: 0.5rem 1rem;
+            border-radius: 60px;
+            color: white;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .logout:hover {
+            background: #e53e3e;
+            transform: translateY(-1px);
+        }
+
+        /* Container */
+        .container {
+            max-width: 1400px;
+            margin: 2rem auto;
+            padding: 0 1.5rem;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.2rem;
+            border-radius: 1.2rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            text-align: center;
+            border: 1px solid rgba(102, 126, 234, 0.1);
+            transition: all 0.2s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 800;
+            background: linear-gradient(95deg, #4f46e5, #7c3aed);
+            background-clip: text;
+            -webkit-background-clip: text;
+            color: transparent;
+        }
+
+        .stat-label {
+            color: #5b6e8c;
+            margin-top: 0.4rem;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        /* Filter Bar */
+        .filter-bar {
+            background: white;
+            padding: 1rem 1.5rem;
+            border-radius: 1.2rem;
+            margin-bottom: 2rem;
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+            border: 1px solid rgba(102, 126, 234, 0.1);
+        }
+
+        .filter-btn {
+            padding: 0.5rem 1.2rem;
+            border: none;
+            border-radius: 60px;
+            cursor: pointer;
+            text-decoration: none;
+            background: #f1f5f9;
+            color: #1e2a3e;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+        }
+
+        .filter-btn.active {
+            background: linear-gradient(95deg, #4f46e5, #7c3aed);
+            color: white;
+        }
+
+        .filter-btn:hover:not(.active) {
+            background: #e2e8f0;
+        }
+
+        .filter-info {
+            margin-left: auto;
+            font-size: 0.85rem;
+            color: #5b6e8c;
+        }
+
+        /* Appointments Table */
+        .appointments-table {
+            background: white;
+            border-radius: 1.2rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            overflow-x: auto;
+            border: 1px solid rgba(102, 126, 234, 0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 900px;
+        }
+
+        th {
+            background: linear-gradient(95deg, #4f46e5, #7c3aed);
+            color: white;
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 0.85rem;
+        }
+
+        tr:hover {
+            background: #f8fafc;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 0.25rem 0.75rem;
+            border-radius: 60px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
         .status-scheduled { background: #e3f2fd; color: #1976d2; }
         .status-confirmed { background: #e8f5e8; color: #388e3c; }
         .status-completed { background: #f3e5f5; color: #7b1fa2; }
         .status-cancelled { background: #ffebee; color: #c62828; }
         .status-no-show { background: #fff3e0; color: #e65100; }
-        .action-btn { display: inline-flex; align-items: center; gap: 5px; padding: 0.4rem 0.8rem; margin: 0.2rem; border: none; border-radius: 60px; cursor: pointer; text-decoration: none; font-size: 0.7rem; font-weight: 600; transition: all 0.2s ease; }
+
+        .action-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 0.4rem 0.8rem;
+            margin: 0.2rem;
+            border: none;
+            border-radius: 60px;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 0.7rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
         .btn-confirm { background: #48bb78; color: white; }
         .btn-complete { background: #9f7aea; color: white; }
         .btn-cancel { background: #f56565; color: white; }
         .btn-noshow { background: #ed8936; color: white; }
-        .action-btn:hover { transform: translateY(-1px); filter: brightness(0.9); }
-        .print-ticket { display: inline-flex; align-items: center; gap: 5px; background: #718096; color: white; padding: 0.4rem 0.8rem; border-radius: 60px; text-decoration: none; font-size: 0.7rem; font-weight: 600; transition: all 0.2s ease; }
-        .print-ticket:hover { background: #4a5568; transform: translateY(-1px); }
-        .sms-badge { display: inline-flex; align-items: center; gap: 4px; padding: 0.25rem 0.6rem; border-radius: 60px; font-size: 0.65rem; font-weight: 700; }
-        .sms-yes { background: #e8f5e8; color: #2e7d32; }
-        .sms-no { background: #ffebee; color: #c62828; }
-        .queue-number { font-weight: 700; color: #4f46e5; font-size: 1rem; }
-        .message { padding: 1rem; border-radius: 1rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 10px; }
-        .success { background: #e8f5e8; color: #2e7d32; border-left: 4px solid #48bb78; }
-        .error { background: #ffebee; color: #c62828; border-left: 4px solid #f56565; }
-        .empty-row td { text-align: center; padding: 3rem; color: #94a3b8; }
+
+        .action-btn:hover {
+            transform: translateY(-1px);
+            filter: brightness(0.9);
+        }
+
+        .print-ticket {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: #718096;
+            color: white;
+            padding: 0.4rem 0.8rem;
+            border-radius: 60px;
+            text-decoration: none;
+            font-size: 0.7rem;
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+
+        .print-ticket:hover {
+            background: #4a5568;
+            transform: translateY(-1px);
+        }
+
+        .sms-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 0.25rem 0.6rem;
+            border-radius: 60px;
+            font-size: 0.65rem;
+            font-weight: 700;
+        }
+
+        .sms-yes {
+            background: #e8f5e8;
+            color: #2e7d32;
+        }
+
+        .sms-no {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .queue-number {
+            font-weight: 700;
+            color: #4f46e5;
+            font-size: 1rem;
+        }
+
+        /* Messages */
+        .message {
+            padding: 1rem;
+            border-radius: 1rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .success {
+            background: #e8f5e8;
+            color: #2e7d32;
+            border-left: 4px solid #48bb78;
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            border-left: 4px solid #f56565;
+        }
+
+        .empty-row td {
+            text-align: center;
+            padding: 3rem;
+            color: #94a3b8;
+        }
+
         @media (max-width: 768px) {
-            .navbar { flex-direction: column; text-align: center; }
-            .stats-grid { grid-template-columns: repeat(2, 1fr); }
-            .filter-bar { justify-content: center; }
-            .filter-info { margin-left: 0; width: 100%; text-align: center; }
-            .container { padding: 0 1rem; }
+            .navbar {
+                flex-direction: column;
+                text-align: center;
+            }
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .filter-bar {
+                justify-content: center;
+            }
+            .filter-info {
+                margin-left: 0;
+                width: 100%;
+                text-align: center;
+            }
+            .container {
+                padding: 0 1rem;
+            }
         }
     </style>
 </head>
@@ -293,6 +563,7 @@ if (!$stats) {
             </div>
         <?php endif; ?>
         
+        <!-- Statistics Cards -->
         <div class="stats-grid">
             <div class="stat-card">
                 <div class="stat-number"><?php echo $stats['total']; ?></div>
@@ -316,6 +587,7 @@ if (!$stats) {
             </div>
         </div>
         
+        <!-- Filter Bar -->
         <div class="filter-bar">
             <a href="?filter=today" class="filter-btn <?php echo $filter == 'today' ? 'active' : ''; ?>">
                 <i class="fas fa-calendar-day"></i> Today
@@ -337,6 +609,7 @@ if (!$stats) {
             </span>
         </div>
         
+        <!-- Appointments Table -->
         <div class="appointments-table">
             <table>
                 <thead>
@@ -366,59 +639,57 @@ if (!$stats) {
                                         <i class="fas <?php echo $apt['status'] == 'scheduled' ? 'fa-clock' : ($apt['status'] == 'confirmed' ? 'fa-check-circle' : ($apt['status'] == 'completed' ? 'fa-flag-checkered' : ($apt['status'] == 'cancelled' ? 'fa-ban' : 'fa-user-slash'))); ?>"></i>
                                         <?php echo ucfirst($apt['status']); ?>
                                     </span>
-                                 </div>
+                                </td>
                                 <td>
                                     <?php if (isset($apt['send_sms']) && $apt['send_sms'] == 1): ?>
                                         <span class="sms-badge sms-yes"><i class="fas fa-check"></i> Yes</span>
                                     <?php else: ?>
                                         <span class="sms-badge sms-no"><i class="fas fa-times"></i> No</span>
                                     <?php endif; ?>
-                                 </div>
+                                </td>
                                 <td>
                                     <div class="action-group">
                                         <?php if ($apt['status'] == 'scheduled'): ?>
-                                            <a href="?action=confirm&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" 
+                                            <a href="?action=confirm&id=<?php echo $apt['appointment_id']; ?>" 
                                                class="action-btn btn-confirm" 
                                                onclick="return confirm('Confirm this appointment? SMS will be sent if patient requested.');">
                                                 <i class="fas fa-check"></i> Confirm
                                             </a>
-                                            <a href="?action=cancel&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" 
+                                            <a href="?action=cancel&id=<?php echo $apt['appointment_id']; ?>" 
                                                class="action-btn btn-cancel"
                                                onclick="return confirm('Cancel this appointment?')">
                                                 <i class="fas fa-times"></i> Cancel
                                             </a>
-                                            <a href="?action=noshow&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" 
+                                        <?php endif; ?>
+                                        
+                                        <?php if ($apt['status'] == 'confirmed'): ?>
+                                            <a href="?action=complete&id=<?php echo $apt['appointment_id']; ?>" 
+                                               class="action-btn btn-complete"
+                                               onclick="return confirm('Mark as completed?')">
+                                                <i class="fas fa-check-double"></i> Complete
+                                            </a>
+                                            <a href="?action=noshow&id=<?php echo $apt['appointment_id']; ?>" 
                                                class="action-btn btn-noshow"
                                                onclick="return confirm('Mark patient as no-show?')">
                                                 <i class="fas fa-user-slash"></i> No Show
                                             </a>
                                         <?php endif; ?>
                                         
-                                        <?php if ($apt['status'] == 'confirmed'): ?>
-                                            <a href="?action=complete&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" 
-                                               class="action-btn btn-complete"
-                                               onclick="return confirm('Mark as completed?')">
-                                                <i class="fas fa-check-double"></i> Complete
-                                            </a>
-                                            <a href="?action=noshow&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" 
+                                        <?php if ($apt['status'] == 'scheduled'): ?>
+                                            <a href="?action=noshow&id=<?php echo $apt['appointment_id']; ?>" 
                                                class="action-btn btn-noshow"
                                                onclick="return confirm('Mark patient as no-show?')">
                                                 <i class="fas fa-user-slash"></i> No Show
                                             </a>
-                                            <a href="?action=cancel&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" 
-                                               class="action-btn btn-cancel"
-                                               onclick="return confirm('Cancel this appointment?')">
-                                                <i class="fas fa-times"></i> Cancel
-                                            </a>
                                         <?php endif; ?>
                                     </div>
-                                 </div>
+                                </td>
                                 <td>
                                     <a href="print_ticket.php?id=<?php echo $apt['appointment_id']; ?>" 
                                        class="print-ticket" target="_blank">
                                         <i class="fas fa-print"></i> Print
                                     </a>
-                                 </div>
+                                </td>
                             </tr>
                         <?php endforeach; ?>
                     <?php else: ?>
@@ -426,11 +697,11 @@ if (!$stats) {
                             <td colspan="9">
                                 <i class="fas fa-calendar-times" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></i>
                                 No appointments found for this date.
-                             </div>
-                         </div>
+                            </td>
+                        </tr>
                     <?php endif; ?>
                 </tbody>
-            </div>
+            </table>
         </div>
     </div>
 </body>
