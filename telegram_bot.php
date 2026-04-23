@@ -92,11 +92,11 @@ if ($text === '/start') {
         $response .= "📋 *Commands:*\n";
         $response .= "🔹 /appointments - View your appointments\n";
         $response .= "🔹 /next - Your next upcoming appointment\n";
-        $response .= "🔹 /queue - Check queue position (confirmed only)\n";
+        $response .= "🔹 /queue - Check queue position\n";
         $response .= "🔹 /profile - View your profile\n";
         $response .= "🔹 /askappointment - Book a new appointment\n";
         $response .= "🔹 /help - Show all commands\n\n";
-        $response .= "_Use /askappointment to book a new appointment._";
+        $response .= "_You will automatically receive appointment reminders._";
     } else {
         $response = "👋 *Welcome to Shifa Medical Center, $first_name!*\n\n";
         $response .= "I'm your health assistant. To get started:\n\n";
@@ -107,11 +107,11 @@ if ($text === '/start') {
         $response .= "*After linking, you can use these commands:*\n";
         $response .= "• /appointments - View your appointments\n";
         $response .= "• /next - Your next upcoming appointment\n";
-        $response .= "• /queue - Check queue position (confirmed only)\n";
+        $response .= "• /queue - Check your queue position\n";
         $response .= "• /profile - View your profile\n";
         $response .= "• /askappointment - Book a new appointment\n";
         $response .= "• /help - Show all commands\n\n";
-        $response .= "_Use /askappointment to book a new appointment._";
+        $response .= "_You will receive automatic reminders for your appointments._";
     }
     
     resetUserBookingSession($chat_id);
@@ -121,11 +121,11 @@ if ($text === '/start') {
 
 // /help - Show all commands
 if ($text === '/help') {
-    $response = " *Available Commands:*\n\n";
+    $response = "🤖 *Available Commands:*\n\n";
     $response .= "*/start* - Welcome message\n";
     $response .= "*/appointments* - View all your appointments\n";
     $response .= "*/next* - Show your next upcoming appointment\n";
-    $response .= "*/queue* - Check your queue position (confirmed appointments only)\n";
+    $response .= "*/queue* - Check your queue position\n";
     $response .= "*/profile* - View your profile information\n";
     $response .= "*/askappointment* - Book a new appointment\n";
     $response .= "*/help* - Show this message\n\n";
@@ -203,7 +203,7 @@ if ($text === '/profile') {
     exit();
 }
 
-// /next - Show next upcoming appointment (scheduled OR confirmed)
+// /next - Show next upcoming appointment (only future)
 if ($text === '/next') {
     if (!$patient) {
         $response = "❌ *Account Not Linked*\n\n";
@@ -230,20 +230,13 @@ if ($text === '/next') {
     $appointment = $apt_stmt->fetch();
     
     if ($appointment) {
-        $status_display = ($appointment['status'] == 'confirmed') ? '✅ Confirmed' : '⏳ Pending';
-        
         $response = "📅 *Your Next Appointment*\n\n";
         $response .= "📆 Date: " . date('l, F j, Y', strtotime($appointment['appointment_date'])) . "\n";
         $response .= "⏰ Time: " . date('g:i A', strtotime($appointment['appointment_time'])) . "\n";
         $response .= "👨‍⚕️ Doctor: Dr. {$appointment['doctor_name']}\n";
         $response .= "🎫 Queue #: {$appointment['queue_number']}\n";
-        $response .= "📌 Status: {$status_display}\n\n";
-        
-        if ($appointment['status'] == 'scheduled') {
-            $response .= "_⚠️ This appointment is pending nurse confirmation. Please wait for confirmation._\n";
-        } else {
-            $response .= "_Please arrive 10 minutes early!_";
-        }
+        $response .= "📌 Status: " . ucfirst($appointment['status']) . "\n\n";
+        $response .= "_Please arrive 10 minutes early!_";
     } else {
         $response = "📅 *No Upcoming Appointments*\n\n";
         $response .= "You have no upcoming appointments scheduled.\n\n";
@@ -277,7 +270,7 @@ if ($text === '/appointments') {
     
     if (count($appointments) > 0) {
         $response = "📋 *Your Appointments*\n\n";
-        $response .= "_⏳ = Pending | ✅ = Confirmed | ✔️ = Completed | ❌ = Cancelled_\n\n";
+        $response .= "_Past appointments are shown for reference._\n\n";
         
         foreach ($appointments as $apt) {
             $status_emoji = match($apt['status']) {
@@ -288,20 +281,21 @@ if ($text === '/appointments') {
                 default => '📌'
             };
             $response .= "{$status_emoji} *" . date('M j, Y', strtotime($apt['appointment_date'])) . "* - " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
-            $response .= "   Dr. {$apt['doctor_name']} | Queue #{$apt['queue_number']}\n\n";
+            $response .= "   Dr. {$apt['doctor_name']} | Queue #{$apt['queue_number']}\n";
+            $response .= "   Status: " . ucfirst($apt['status']) . "\n\n";
         }
-        $response .= "_To book a new appointment, use /askappointment_";
+        $response .= "_To book a new appointment, use /askappointment or visit our website._";
     } else {
         $response = "📋 *No Appointments Found*\n\n";
         $response .= "You don't have any appointments yet.\n\n";
-        $response .= "Book one using /askappointment";
+        $response .= "Book one using /askappointment or at: https://shifacenter.me/patient/book_appointment.php";
     }
     
     sendMessage($chat_id, $response, $bot_token);
     exit();
 }
 
-// /queue - Check queue position for today (ONLY confirmed appointments)
+// /queue - Check queue position for today (only future appointments)
 if ($text === '/queue') {
     if (!$patient) {
         $response = "❌ *Account Not Linked*\n\n";
@@ -311,14 +305,13 @@ if ($text === '/queue') {
         exit();
     }
     
-    // Get today's confirmed appointment
     $apt_stmt = $pdo->prepare("
         SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
         FROM appointments a
         JOIN doctors d ON a.doctor_id = d.doctor_id
         WHERE a.patient_id = ? AND a.appointment_date = CURDATE() 
         AND a.appointment_time > CURTIME()
-        AND a.status = 'confirmed'
+        AND a.status IN ('scheduled', 'confirmed')
         ORDER BY a.appointment_time ASC
         LIMIT 1
     ");
@@ -326,23 +319,21 @@ if ($text === '/queue') {
     $appointment = $apt_stmt->fetch();
     
     if ($appointment) {
-        // Count people ahead (only confirmed)
         $queue_stmt = $pdo->prepare("
             SELECT COUNT(*) as ahead FROM appointments 
             WHERE appointment_date = CURDATE() 
             AND queue_number < ? 
             AND appointment_time > CURTIME()
-            AND status = 'confirmed'
+            AND status IN ('scheduled', 'confirmed')
         ");
         $queue_stmt->execute([$appointment['queue_number']]);
         $ahead = $queue_stmt->fetchColumn();
         
-        // Count total waiting (only confirmed)
         $total_stmt = $pdo->prepare("
             SELECT COUNT(*) as total FROM appointments 
             WHERE appointment_date = CURDATE() 
             AND appointment_time > CURTIME()
-            AND status = 'confirmed'
+            AND status IN ('scheduled', 'confirmed')
         ");
         $total_stmt->execute();
         $total = $total_stmt->fetchColumn();
@@ -357,13 +348,12 @@ if ($text === '/queue') {
             $response .= "🔔 *You're NEXT!* Please be ready when called.\n";
         } else {
             $response .= "⏱️ Estimated wait: ~" . ($ahead * 15) . " minutes\n";
+            $response .= "_Based on 15 minutes per patient._\n";
         }
     } else {
         $response = "🎫 *No Active Queue*\n\n";
-        $response .= "You don't have any confirmed appointments scheduled for today.\n\n";
-        $response .= "• Check /appointments to see pending requests\n";
-        $response .= "• Send /next to see your next appointment\n";
-        $response .= "• Book a new appointment using /askappointment";
+        $response .= "You don't have any upcoming appointments scheduled for today.\n\n";
+        $response .= "Send /next to see your next appointment.";
     }
     
     sendMessage($chat_id, $response, $bot_token);
@@ -528,10 +518,9 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
                         $response .= "👨‍⚕️ Doctor: Dr. {$booking_data['doctor_name']}\n";
                         $response .= "📆 Date: " . date('l, F j, Y', strtotime($booking_data['appointment_date'])) . "\n";
                         $response .= "⏰ Time: " . date('g:i A', strtotime($booking_data['appointment_time'])) . "\n\n";
-                        $response .= "✅ Type 'confirm' to submit this appointment request\n";
+                        $response .= "✅ Type 'confirm' to book this appointment\n";
                         $response .= "❌ Type 'cancel' to cancel\n";
-                        $response .= "🔄 Type a new date (DD-MM-YYYY) to change the date\n\n";
-                        $response .= "_Note: Your appointment will be pending nurse confirmation._";
+                        $response .= "🔄 Type a new date (DD-MM-YYYY) to change the date";
                         
                         sendMessage($chat_id, $response, $bot_token);
                     } else {
@@ -572,16 +561,15 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
                 ]);
                 
                 if ($result) {
-                    $response = "✅ *Appointment Request Submitted!*\n\n";
+                    $response = "✅ *Appointment Booked Successfully!*\n\n";
                     $response .= "📋 *Appointment Details:*\n";
                     $response .= "👨‍⚕️ Doctor: Dr. {$booking_data['doctor_name']}\n";
                     $response .= "📆 Date: " . date('l, F j, Y', strtotime($booking_data['appointment_date'])) . "\n";
                     $response .= "⏰ Time: " . date('g:i A', strtotime($booking_data['appointment_time'])) . "\n";
                     $response .= "🎫 Queue Number: {$queue_number}\n\n";
-                    $response .= "⏳ *Pending Confirmation*\n";
-                    $response .= "_Your appointment request has been sent. A nurse will confirm it soon._\n\n";
-                    $response .= "Use /appointments to check status.\n";
-                    $response .= "Once confirmed, it will appear in /queue.";
+                    $response .= "📌 *Please arrive 10 minutes before your appointment time.*\n";
+                    $response .= "_You will receive a reminder before your appointment._\n\n";
+                    $response .= "Use /appointments to view all your appointments or /next to see your next one.";
                     
                     sendMessage($chat_id, $response, $bot_token);
                 } else {
