@@ -213,37 +213,42 @@ if ($text === '/next') {
         exit();
     }
     
-    $apt_stmt = $pdo->prepare("
-        SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
-        FROM appointments a
-        JOIN doctors d ON a.doctor_id = d.doctor_id
-        WHERE a.patient_id = ? 
-        AND a.status = 'confirmed'
-        AND (
-            a.appointment_date > CURDATE() 
-            OR (a.appointment_date = CURDATE() AND a.appointment_time > CURTIME())
-        )
-        ORDER BY a.appointment_date ASC, a.appointment_time ASC
-        LIMIT 1
-    ");
-    $apt_stmt->execute([$patient['patient_id']]);
-    $appointment = $apt_stmt->fetch();
-    
-    if ($appointment) {
-        $response = "📅 *Your Next Confirmed Appointment*\n\n";
-        $response .= "📆 Date: " . date('l, F j, Y', strtotime($appointment['appointment_date'])) . "\n";
-        $response .= "⏰ Time: " . date('g:i A', strtotime($appointment['appointment_time'])) . "\n";
-        $response .= "👨‍⚕️ Doctor: Dr. {$appointment['doctor_name']}\n";
-        $response .= "🎫 Queue #: {$appointment['queue_number']}\n\n";
-        $response .= "_Please arrive 10 minutes early!_";
-    } else {
-        $response = "📅 *No Upcoming Confirmed Appointments*\n\n";
-        $response .= "You have no confirmed upcoming appointments.\n\n";
-        $response .= "Check /appointments to see pending requests.\n";
-        $response .= "Book a new appointment using /askappointment or on our website: https://shifacenter.me/patient/book_appointment.php";
+    try {
+        $apt_stmt = $pdo->prepare("
+            SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
+            FROM appointments a
+            JOIN doctors d ON a.doctor_id = d.doctor_id
+            WHERE a.patient_id = ? 
+            AND a.status = 'confirmed'
+            AND (
+                a.appointment_date > CURDATE() 
+                OR (a.appointment_date = CURDATE() AND a.appointment_time > CURTIME())
+            )
+            ORDER BY a.appointment_date ASC, a.appointment_time ASC
+            LIMIT 1
+        ");
+        $apt_stmt->execute([$patient['patient_id']]);
+        $appointment = $apt_stmt->fetch();
+        
+        if ($appointment) {
+            $response = "📅 *Your Next Confirmed Appointment*\n\n";
+            $response .= "📆 Date: " . date('l, F j, Y', strtotime($appointment['appointment_date'])) . "\n";
+            $response .= "⏰ Time: " . date('g:i A', strtotime($appointment['appointment_time'])) . "\n";
+            $response .= "👨‍⚕️ Doctor: Dr. {$appointment['doctor_name']}\n";
+            $response .= "🎫 Queue #: {$appointment['queue_number']}\n\n";
+            $response .= "_Please arrive 10 minutes early!_";
+        } else {
+            $response = "📅 *No Upcoming Confirmed Appointments*\n\n";
+            $response .= "You have no confirmed upcoming appointments.\n\n";
+            $response .= "• Check /appointments to see pending requests\n";
+            $response .= "• Book a new appointment using /askappointment\n";
+            $response .= "• Or visit: https://shifacenter.me/patient/book_appointment.php";
+        }
+        
+        sendMessage($chat_id, $response, $bot_token);
+    } catch (Exception $e) {
+        sendMessage($chat_id, "❌ Error fetching appointments. Please try again later.", $bot_token);
     }
-    
-    sendMessage($chat_id, $response, $bot_token);
     exit();
 }
 
@@ -257,49 +262,45 @@ if ($text === '/appointments') {
         exit();
     }
     
-    $apt_stmt = $pdo->prepare("
-        SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
-        FROM appointments a
-        JOIN doctors d ON a.doctor_id = d.doctor_id
-        WHERE a.patient_id = ? 
-        ORDER BY a.appointment_date DESC, a.appointment_time DESC
-        LIMIT 10
-    ");
-    $apt_stmt->execute([$patient['patient_id']]);
-    $appointments = $apt_stmt->fetchAll();
-    
-    if (count($appointments) > 0) {
-        $response = "📋 *Your Appointments*\n\n";
-        $response .= "_⏳ = Pending | ✅ = Confirmed | ✔️ = Completed | ❌ = Cancelled_\n\n";
+    try {
+        $apt_stmt = $pdo->prepare("
+            SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
+            FROM appointments a
+            JOIN doctors d ON a.doctor_id = d.doctor_id
+            WHERE a.patient_id = ? 
+            ORDER BY a.appointment_date DESC, a.appointment_time DESC
+            LIMIT 10
+        ");
+        $apt_stmt->execute([$patient['patient_id']]);
+        $appointments = $apt_stmt->fetchAll();
         
-        foreach ($appointments as $apt) {
-            $status_emoji = match($apt['status']) {
-                'scheduled' => '⏳',
-                'confirmed' => '✅',
-                'completed' => '✔️',
-                'cancelled' => '❌',
-                default => '📌'
-            };
+        if (count($appointments) > 0) {
+            $response = "📋 *Your Appointments*\n\n";
+            $response .= "_⏳ = Pending | ✅ = Confirmed | ✔️ = Completed | ❌ = Cancelled_\n\n";
             
-            $date_obj = strtotime($apt['appointment_date']);
-            $today = strtotime(date('Y-m-d'));
-            $is_past = ($date_obj < $today) || ($date_obj == $today && $apt['appointment_time'] < date('H:i:s'));
-            
-            $response .= "{$status_emoji} *" . date('M j, Y', $date_obj) . "* - " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
-            $response .= "   Dr. {$apt['doctor_name']} | Queue #{$apt['queue_number']}\n";
-            if ($is_past && $apt['status'] == 'scheduled') {
-                $response .= "   ⚠️ *Missed appointment* - Please reschedule\n";
+            foreach ($appointments as $apt) {
+                $status_emoji = match($apt['status']) {
+                    'scheduled' => '⏳',
+                    'confirmed' => '✅',
+                    'completed' => '✔️',
+                    'cancelled' => '❌',
+                    default => '📌'
+                };
+                
+                $response .= "{$status_emoji} *" . date('M j, Y', strtotime($apt['appointment_date'])) . "* - " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
+                $response .= "   Dr. {$apt['doctor_name']} | Queue #{$apt['queue_number']}\n\n";
             }
-            $response .= "\n";
+            $response .= "_To book a new appointment, use /askappointment_";
+        } else {
+            $response = "📋 *No Appointments Found*\n\n";
+            $response .= "You don't have any appointments yet.\n\n";
+            $response .= "Book one using /askappointment";
         }
-        $response .= "_To book a new appointment, use /askappointment or visit our website._";
-    } else {
-        $response = "📋 *No Appointments Found*\n\n";
-        $response .= "You don't have any appointments yet.\n\n";
-        $response .= "Book one using /askappointment or at: https://shifacenter.me/patient/book_appointment.php";
+        
+        sendMessage($chat_id, $response, $bot_token);
+    } catch (Exception $e) {
+        sendMessage($chat_id, "❌ Error fetching appointments. Please try again later.", $bot_token);
     }
-    
-    sendMessage($chat_id, $response, $bot_token);
     exit();
 }
 
@@ -313,59 +314,62 @@ if ($text === '/queue') {
         exit();
     }
     
-    $apt_stmt = $pdo->prepare("
-        SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
-        FROM appointments a
-        JOIN doctors d ON a.doctor_id = d.doctor_id
-        WHERE a.patient_id = ? AND a.appointment_date = CURDATE() 
-        AND a.appointment_time > CURTIME()
-        AND a.status = 'confirmed'
-        ORDER BY a.appointment_time ASC
-        LIMIT 1
-    ");
-    $apt_stmt->execute([$patient['patient_id']]);
-    $appointment = $apt_stmt->fetch();
-    
-    if ($appointment) {
-        $queue_stmt = $pdo->prepare("
-            SELECT COUNT(*) as ahead FROM appointments 
-            WHERE appointment_date = CURDATE() 
-            AND queue_number < ? 
-            AND appointment_time > CURTIME()
-            AND status = 'confirmed'
+    try {
+        $apt_stmt = $pdo->prepare("
+            SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
+            FROM appointments a
+            JOIN doctors d ON a.doctor_id = d.doctor_id
+            WHERE a.patient_id = ? AND a.appointment_date = CURDATE() 
+            AND a.appointment_time > CURTIME()
+            AND a.status = 'confirmed'
+            ORDER BY a.appointment_time ASC
+            LIMIT 1
         ");
-        $queue_stmt->execute([$appointment['queue_number']]);
-        $ahead = $queue_stmt->fetchColumn();
+        $apt_stmt->execute([$patient['patient_id']]);
+        $appointment = $apt_stmt->fetch();
         
-        $total_stmt = $pdo->prepare("
-            SELECT COUNT(*) as total FROM appointments 
-            WHERE appointment_date = CURDATE() 
-            AND appointment_time > CURTIME()
-            AND status = 'confirmed'
-        ");
-        $total_stmt->execute();
-        $total = $total_stmt->fetchColumn();
-        
-        $response = "🎫 *Queue Information*\n\n";
-        $response .= "👨‍⚕️ Doctor: Dr. {$appointment['doctor_name']}\n";
-        $response .= "🎟️ Your Queue #: *{$appointment['queue_number']}*\n";
-        $response .= "📊 Position: " . ($ahead + 1) . " of $total waiting\n";
-        $response .= "👥 People ahead: $ahead\n\n";
-        
-        if ($ahead == 0) {
-            $response .= "🔔 *You're NEXT!* Please be ready when called.\n";
+        if ($appointment) {
+            $queue_stmt = $pdo->prepare("
+                SELECT COUNT(*) as ahead FROM appointments 
+                WHERE appointment_date = CURDATE() 
+                AND queue_number < ? 
+                AND appointment_time > CURTIME()
+                AND status = 'confirmed'
+            ");
+            $queue_stmt->execute([$appointment['queue_number']]);
+            $ahead = $queue_stmt->fetchColumn();
+            
+            $total_stmt = $pdo->prepare("
+                SELECT COUNT(*) as total FROM appointments 
+                WHERE appointment_date = CURDATE() 
+                AND appointment_time > CURTIME()
+                AND status = 'confirmed'
+            ");
+            $total_stmt->execute();
+            $total = $total_stmt->fetchColumn();
+            
+            $response = "🎫 *Queue Information*\n\n";
+            $response .= "👨‍⚕️ Doctor: Dr. {$appointment['doctor_name']}\n";
+            $response .= "🎟️ Your Queue #: *{$appointment['queue_number']}*\n";
+            $response .= "📊 Position: " . ($ahead + 1) . " of $total waiting\n";
+            $response .= "👥 People ahead: $ahead\n\n";
+            
+            if ($ahead == 0) {
+                $response .= "🔔 *You're NEXT!* Please be ready when called.\n";
+            } else {
+                $response .= "⏱️ Estimated wait: ~" . ($ahead * 15) . " minutes\n";
+            }
         } else {
-            $response .= "⏱️ Estimated wait: ~" . ($ahead * 15) . " minutes\n";
-            $response .= "_Based on 15 minutes per patient._\n";
+            $response = "🎫 *No Active Queue*\n\n";
+            $response .= "You don't have any confirmed appointments scheduled for today.\n\n";
+            $response .= "Check /appointments to see pending requests.\n";
+            $response .= "Send /next to see your next confirmed appointment.";
         }
-    } else {
-        $response = "🎫 *No Active Queue*\n\n";
-        $response .= "You don't have any confirmed appointments scheduled for today.\n\n";
-        $response .= "Check /appointments to see pending requests.\n";
-        $response .= "Send /next to see your next confirmed appointment.";
+        
+        sendMessage($chat_id, $response, $bot_token);
+    } catch (Exception $e) {
+        sendMessage($chat_id, "❌ Error fetching queue information. Please try again later.", $bot_token);
     }
-    
-    sendMessage($chat_id, $response, $bot_token);
     exit();
 }
 
@@ -433,15 +437,14 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
             
         case 'select_date':
             // Convert common date formats to YYYY-MM-DD
+            $original_text = $text;
             if (preg_match('/^\d{2}-\d{2}-\d{4}$/', $text)) {
                 $parts = explode('-', $text);
                 $text = $parts[2] . '-' . $parts[1] . '-' . $parts[0];
-            }
-            elseif (preg_match('/^\d{2}\/\d{2}\/\d{4}$/', $text)) {
+            } elseif (preg_match('/^\d{2}\/\d{2}\/\d{4}$/', $text)) {
                 $parts = explode('/', $text);
                 $text = $parts[2] . '-' . $parts[1] . '-' . $parts[0];
-            }
-            elseif (preg_match('/^\d{2}\.\d{2}\.\d{4}$/', $text)) {
+            } elseif (preg_match('/^\d{2}\.\d{2}\.\d{4}$/', $text)) {
                 $parts = explode('.', $text);
                 $text = $parts[2] . '-' . $parts[1] . '-' . $parts[0];
             }
