@@ -90,9 +90,9 @@ if ($text === '/start') {
         $response = "👋 *Welcome back, {$patient['first_name']}!*\n\n";
         $response .= "Your account is already linked. Here's what you can do:\n\n";
         $response .= "📋 *Commands:*\n";
-        $response .= "🔹 /appointments - View all your appointments\n";
-        $response .= "🔹 /next - Your next appointment\n";
-        $response .= "🔹 /queue - Check queue position\n";
+        $response .= "🔹 /appointments - View your appointments\n";
+        $response .= "🔹 /next - Your next upcoming appointment\n";
+        $response .= "🔹 /queue - Check queue position (confirmed only)\n";
         $response .= "🔹 /profile - View your profile\n";
         $response .= "🔹 /askappointment - Book a new appointment\n";
         $response .= "🔹 /help - Show all commands\n\n";
@@ -105,9 +105,9 @@ if ($text === '/start') {
         $response .= "3️⃣ *Your account will be automatically linked*\n\n";
         $response .= "🔗 Portal: https://shifacenter.me/patient/dashboard.php\n\n";
         $response .= "*After linking, you can use these commands:*\n";
-        $response .= "• /appointments - View all your appointments\n";
-        $response .= "• /next - Your next appointment\n";
-        $response .= "• /queue - Check your queue position\n";
+        $response .= "• /appointments - View your appointments\n";
+        $response .= "• /next - Your next upcoming appointment\n";
+        $response .= "• /queue - Check queue position (confirmed only)\n";
         $response .= "• /profile - View your profile\n";
         $response .= "• /askappointment - Book a new appointment\n";
         $response .= "• /help - Show all commands\n\n";
@@ -121,11 +121,11 @@ if ($text === '/start') {
 
 // /help - Show all commands
 if ($text === '/help') {
-    $response = "🤖 *Available Commands:*\n\n";
+    $response = " *Available Commands:*\n\n";
     $response .= "*/start* - Welcome message\n";
     $response .= "*/appointments* - View all your appointments\n";
-    $response .= "*/next* - Show your next appointment\n";
-    $response .= "*/queue* - Check your queue position\n";
+    $response .= "*/next* - Show your next upcoming appointment\n";
+    $response .= "*/queue* - Check your queue position (confirmed appointments only)\n";
     $response .= "*/profile* - View your profile information\n";
     $response .= "*/askappointment* - Book a new appointment\n";
     $response .= "*/help* - Show this message\n\n";
@@ -203,7 +203,7 @@ if ($text === '/profile') {
     exit();
 }
 
-// /next - Show next appointment (scheduled OR confirmed)
+// /next - Show next upcoming appointment (scheduled OR confirmed)
 if ($text === '/next') {
     if (!$patient) {
         $response = "❌ *Account Not Linked*\n\n";
@@ -230,7 +230,7 @@ if ($text === '/next') {
     $appointment = $apt_stmt->fetch();
     
     if ($appointment) {
-        $status_display = ($appointment['status'] == 'confirmed') ? '✅ Confirmed' : '⏳ Pending Confirmation';
+        $status_display = ($appointment['status'] == 'confirmed') ? '✅ Confirmed' : '⏳ Pending';
         
         $response = "📅 *Your Next Appointment*\n\n";
         $response .= "📆 Date: " . date('l, F j, Y', strtotime($appointment['appointment_date'])) . "\n";
@@ -240,22 +240,21 @@ if ($text === '/next') {
         $response .= "📌 Status: {$status_display}\n\n";
         
         if ($appointment['status'] == 'scheduled') {
-            $response .= "_⏳ This appointment is pending nurse confirmation._\n";
+            $response .= "_⚠️ This appointment is pending nurse confirmation. Please wait for confirmation._\n";
         } else {
             $response .= "_Please arrive 10 minutes early!_";
         }
     } else {
         $response = "📅 *No Upcoming Appointments*\n\n";
-        $response .= "You have no upcoming appointments.\n\n";
-        $response .= "Book a new appointment using /askappointment\n";
-        $response .= "Or visit: https://shifacenter.me/patient/book_appointment.php";
+        $response .= "You have no upcoming appointments scheduled.\n\n";
+        $response .= "Book one using /askappointment or on our website: https://shifacenter.me/patient/book_appointment.php";
     }
     
     sendMessage($chat_id, $response, $bot_token);
     exit();
 }
 
-// /appointments - Show all appointments (scheduled, confirmed, completed, cancelled)
+// /appointments - Show all appointments (past and future)
 if ($text === '/appointments') {
     if (!$patient) {
         $response = "❌ *Account Not Linked*\n\n";
@@ -288,7 +287,6 @@ if ($text === '/appointments') {
                 'cancelled' => '❌',
                 default => '📌'
             };
-            
             $response .= "{$status_emoji} *" . date('M j, Y', strtotime($apt['appointment_date'])) . "* - " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
             $response .= "   Dr. {$apt['doctor_name']} | Queue #{$apt['queue_number']}\n\n";
         }
@@ -303,7 +301,7 @@ if ($text === '/appointments') {
     exit();
 }
 
-// /queue - Check queue position for today (only confirmed appointments)
+// /queue - Check queue position for today (ONLY confirmed appointments)
 if ($text === '/queue') {
     if (!$patient) {
         $response = "❌ *Account Not Linked*\n\n";
@@ -313,6 +311,7 @@ if ($text === '/queue') {
         exit();
     }
     
+    // Get today's confirmed appointment
     $apt_stmt = $pdo->prepare("
         SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
         FROM appointments a
@@ -327,6 +326,7 @@ if ($text === '/queue') {
     $appointment = $apt_stmt->fetch();
     
     if ($appointment) {
+        // Count people ahead (only confirmed)
         $queue_stmt = $pdo->prepare("
             SELECT COUNT(*) as ahead FROM appointments 
             WHERE appointment_date = CURDATE() 
@@ -337,6 +337,7 @@ if ($text === '/queue') {
         $queue_stmt->execute([$appointment['queue_number']]);
         $ahead = $queue_stmt->fetchColumn();
         
+        // Count total waiting (only confirmed)
         $total_stmt = $pdo->prepare("
             SELECT COUNT(*) as total FROM appointments 
             WHERE appointment_date = CURDATE() 
@@ -360,8 +361,9 @@ if ($text === '/queue') {
     } else {
         $response = "🎫 *No Active Queue*\n\n";
         $response .= "You don't have any confirmed appointments scheduled for today.\n\n";
-        $response .= "Check /appointments to see pending requests.\n";
-        $response .= "Send /next to see your next appointment.";
+        $response .= "• Check /appointments to see pending requests\n";
+        $response .= "• Send /next to see your next appointment\n";
+        $response .= "• Book a new appointment using /askappointment";
     }
     
     sendMessage($chat_id, $response, $bot_token);
@@ -474,7 +476,6 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
                             continue;
                         }
                         
-                        // Check both scheduled AND confirmed to prevent double-booking
                         $check_stmt = $pdo->prepare("
                             SELECT COUNT(*) FROM appointments 
                             WHERE doctor_id = ? AND appointment_date = ? AND appointment_time = ?
@@ -580,7 +581,7 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
                     $response .= "⏳ *Pending Confirmation*\n";
                     $response .= "_Your appointment request has been sent. A nurse will confirm it soon._\n\n";
                     $response .= "Use /appointments to check status.\n";
-                    $response .= "Once confirmed, it will appear in /next.";
+                    $response .= "Once confirmed, it will appear in /queue.";
                     
                     sendMessage($chat_id, $response, $bot_token);
                 } else {
@@ -624,7 +625,6 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
                             continue;
                         }
                         
-                        // Check both scheduled AND confirmed to prevent double-booking
                         $check_stmt = $pdo->prepare("
                             SELECT COUNT(*) FROM appointments 
                             WHERE doctor_id = ? AND appointment_date = ? AND appointment_time = ?
