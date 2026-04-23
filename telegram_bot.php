@@ -167,7 +167,7 @@ if ($text === '/askappointment') {
     exit();
 }
 
-// Handle appointment booking conversation
+// ========== BOOKING CONVERSATION HANDLER (Moved here - BEFORE other commands) ==========
 $current_step = getBookingStep($chat_id);
 if ($current_step !== null && $text !== '/cancel' && $text !== '/start' && $text !== '/help') {
     handleBookingConversation($chat_id, $text, $pdo, $bot_token);
@@ -391,7 +391,7 @@ function sendMessage($chat_id, $message, $bot_token) {
     ];
     
     $context = stream_context_create($options);
-    file_get_contents($url, false, $context);
+    @file_get_contents($url, false, $context);
 }
 
 function sendChatAction($chat_id, $action, $bot_token) {
@@ -407,7 +407,7 @@ function sendChatAction($chat_id, $action, $bot_token) {
     ];
     
     $context = stream_context_create($options);
-    file_get_contents($url, false, $context);
+    @file_get_contents($url, false, $context);
 }
 
 function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
