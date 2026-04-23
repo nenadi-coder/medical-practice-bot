@@ -77,10 +77,20 @@ function resetUserBookingSession($chat_id) {
     }
 }
 
-// Check if user is already linked
-$stmt = $pdo->prepare("SELECT * FROM patients WHERE telegram_chat_id = ? OR telegram_user_id = ?");
-$stmt->execute([$chat_id, $chat_id]);
+// Check if user is already linked and update telegram_chat_id
+$stmt = $pdo->prepare("SELECT * FROM patients WHERE telegram_chat_id = ? OR telegram_user_id = ? OR email = ?");
+$stmt->execute([$chat_id, $chat_id, $text]);
 $patient = $stmt->fetch();
+
+// If patient found but telegram_chat_id is empty, update it
+if ($patient && empty($patient['telegram_chat_id'])) {
+    $update_stmt = $pdo->prepare("UPDATE patients SET telegram_chat_id = ?, telegram_user_id = ?, telegram_linked_at = NOW() WHERE patient_id = ?");
+    $update_stmt->execute([$chat_id, $chat_id, $patient['patient_id']]);
+    // Refresh patient data
+    $stmt = $pdo->prepare("SELECT * FROM patients WHERE patient_id = ?");
+    $stmt->execute([$patient['patient_id']]);
+    $patient = $stmt->fetch();
+}
 
 // ========== COMMAND HANDLERS ==========
 
@@ -192,7 +202,6 @@ if ($text === '/check') {
         exit();
     }
     
-    // First, check if we can query the database
     try {
         $test_stmt = $pdo->prepare("SELECT COUNT(*) as count FROM appointments WHERE patient_id = ?");
         $test_stmt->execute([$patient['patient_id']]);
@@ -201,7 +210,6 @@ if ($text === '/check') {
         $response = "✅ *Database Connection: WORKING*\n\n";
         $response .= "📊 You have $count appointment(s) in the database.\n\n";
         
-        // Show recent appointments
         $apt_stmt = $pdo->prepare("
             SELECT appointment_id, appointment_date, appointment_time, status 
             FROM appointments 
@@ -249,7 +257,7 @@ if ($text === '/profile') {
     exit();
 }
 
-// /next - Show next upcoming appointment (scheduled OR confirmed)
+// /next - Show next upcoming appointment
 if ($text === '/next') {
     if (!$patient) {
         $response = "❌ *Account Not Linked*\n\n";
@@ -512,7 +520,6 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
                     $current_time = date('H:i:s');
                     
                     foreach ($time_slots as $slot) {
-                        // Skip past times if date is today
                         if ($selected_date == date('Y-m-d') && $slot <= $current_time) {
                             continue;
                         }
@@ -636,7 +643,6 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
                 sendMessage($chat_id, "❌ Appointment booking cancelled. Type /askappointment to start over.", $bot_token);
                 
             } elseif (preg_match('/^\d{2}-\d{2}-\d{4}$/', $text) || preg_match('/^\d{4}-\d{2}-\d{2}$/', $text)) {
-                // Convert to YYYY-MM-DD if needed
                 if (preg_match('/^\d{2}-\d{2}-\d{4}$/', $text)) {
                     $parts = explode('-', $text);
                     $selected_date = $parts[2] . '-' . $parts[1] . '-' . $parts[0];
@@ -661,7 +667,6 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
                     $current_time = date('H:i:s');
                     
                     foreach ($time_slots as $slot) {
-                        // Skip past times if date is today
                         if ($selected_date == date('Y-m-d') && $slot <= $current_time) {
                             continue;
                         }
