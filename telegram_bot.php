@@ -711,5 +711,27 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
             resetUserBookingSession($chat_id);
             break;
     }
+    // /debug - Show all appointments in database
+if ($text === '/debug') {
+    if (!$patient) {
+        sendMessage($chat_id, "❌ Account not linked.", $bot_token);
+        exit();
+    }
+    
+    // Get ALL appointments from database
+    $all_stmt = $pdo->prepare("SELECT * FROM appointments ORDER BY appointment_id DESC LIMIT 20");
+    $all_stmt->execute();
+    $all_appointments = $all_stmt->fetchAll();
+    
+    $response = "📊 *DATABASE DEBUG*\n\n";
+    $response .= "Total appointments in DB: " . count($all_appointments) . "\n\n";
+    
+    foreach ($all_appointments as $apt) {
+        $response .= "ID: {$apt['appointment_id']} | Patient: {$apt['patient_id']} | Date: {$apt['appointment_date']} | Time: {$apt['appointment_time']} | Status: {$apt['status']}\n";
+    }
+    
+    sendMessage($chat_id, $response, $bot_token);
+    exit();
+}
 }
 ?>
