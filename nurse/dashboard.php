@@ -1,6 +1,8 @@
 <?php
 require_once '../includes/config.php';
 
+session_start();
+
 // Check if nurse is logged in
 if (!isset($_SESSION['nurse_id'])) {
     header('Location: login.php');
@@ -10,7 +12,7 @@ if (!isset($_SESSION['nurse_id'])) {
 // Get today's date
 $today = date('Y-m-d');
 
-// Handle status updates - ADD THIS for confirming appointments
+// Handle status updates
 if (isset($_GET['action']) && isset($_GET['id'])) {
     $appointment_id = $_GET['id'];
     $action = $_GET['action'];
@@ -41,18 +43,23 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
         $_SESSION['success'] = $message;
     }
     
-    header('Location: dashboard.php');
+    header('Location: dashboard.php?filter=' . urlencode($_GET['filter'] ?? 'today'));
     exit();
 }
 
 // Get filter from URL
 $filter = isset($_GET['filter']) ? $_GET['filter'] : 'today';
 
+// Debug - log to file
+$log_message = date('Y-m-d H:i:s') . " - Filter: $filter - Today: $today\n";
+file_put_contents('/tmp/nurse_debug.log', $log_message, FILE_APPEND);
+
 // Build query
 if ($filter == 'today') {
     $sql = "SELECT a.*, 
             CONCAT(p.first_name, ' ', p.last_name) as patient_name,
             p.phone as patient_phone,
+            p.email as patient_email,
             CONCAT(d.first_name, ' ', d.last_name) as doctor_name
             FROM appointments a
             JOIN patients p ON a.patient_id = p.patient_id
@@ -65,6 +72,7 @@ if ($filter == 'today') {
     $sql = "SELECT a.*, 
             CONCAT(p.first_name, ' ', p.last_name) as patient_name,
             p.phone as patient_phone,
+            p.email as patient_email,
             CONCAT(d.first_name, ' ', d.last_name) as doctor_name
             FROM appointments a
             JOIN patients p ON a.patient_id = p.patient_id
@@ -77,16 +85,21 @@ if ($filter == 'today') {
     $sql = "SELECT a.*, 
             CONCAT(p.first_name, ' ', p.last_name) as patient_name,
             p.phone as patient_phone,
+            p.email as patient_email,
             CONCAT(d.first_name, ' ', d.last_name) as doctor_name
             FROM appointments a
             JOIN patients p ON a.patient_id = p.patient_id
             JOIN doctors d ON a.doctor_id = d.doctor_id
+            WHERE a.status IN ('scheduled', 'confirmed', 'completed', 'cancelled')
             ORDER BY a.appointment_date DESC, a.appointment_time ASC
-            LIMIT 50";
+            LIMIT 100";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
 }
 $appointments = $stmt->fetchAll();
+
+// Debug log count
+file_put_contents('/tmp/nurse_debug.log', date('Y-m-d H:i:s') . " - Found " . count($appointments) . " appointments\n", FILE_APPEND);
 
 // Get stats for today
 $stats_sql = "SELECT 
@@ -103,6 +116,12 @@ $stats = $stats_stmt->fetch();
 if (!$stats) {
     $stats = ['total' => 0, 'scheduled' => 0, 'confirmed' => 0, 'completed' => 0, 'cancelled' => 0];
 }
+
+// Get tomorrow stats for display
+$tomorrow_sql = "SELECT COUNT(*) as count FROM appointments WHERE appointment_date = CURDATE() + INTERVAL 1 DAY";
+$tomorrow_stmt = $pdo->prepare($tomorrow_sql);
+$tomorrow_stmt->execute();
+$tomorrow_count = $tomorrow_stmt->fetchColumn();
 ?>
 
 <!DOCTYPE html>
@@ -168,6 +187,7 @@ if (!$stats) {
             display: flex;
             gap: 1rem;
             flex-wrap: wrap;
+            align-items: center;
         }
         .filter-btn {
             padding: 0.5rem 1.2rem;
@@ -177,8 +197,19 @@ if (!$stats) {
             color: #1e2a3e;
             font-weight: 600;
             font-size: 0.85rem;
+            transition: all 0.2s;
         }
         .filter-btn.active { background: #4f46e5; color: white; }
+        .filter-btn:hover:not(.active) { background: #e2e8f0; }
+        
+        .badge-count {
+            background: #4f46e5;
+            color: white;
+            border-radius: 20px;
+            padding: 0.1rem 0.5rem;
+            font-size: 0.7rem;
+            margin-left: 0.3rem;
+        }
         
         .appointments-table {
             background: white;
@@ -224,16 +255,28 @@ if (!$stats) {
             text-decoration: none;
             font-size: 0.7rem;
             font-weight: 600;
+            transition: all 0.2s;
         }
         .btn-confirm { background: #22c55e; color: white; }
         .btn-cancel { background: #ef4444; color: white; }
         .btn-complete { background: #8b5cf6; color: white; }
+        .action-btn:hover { transform: translateY(-1px); filter: brightness(0.9); }
         
         .message { padding: 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem; }
         .success { background: #dcfce7; color: #166534; border-left: 4px solid #22c55e; }
         .error { background: #fee2e2; color: #991b1b; border-left: 4px solid #ef4444; }
         
         .queue-number { font-weight: 700; color: #4f46e5; font-size: 1rem; }
+        
+        .debug-info {
+            background: #f8f9fa;
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-family: monospace;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -251,6 +294,16 @@ if (!$stats) {
             <div class="message success">✅ <?php echo $_SESSION['success']; unset($_SESSION['success']); ?></div>
         <?php endif; ?>
         
+        <!-- Debug Info (hidden, can be unhidden for testing) -->
+        <div class="debug-info">
+            <strong>Debug Info:</strong><br>
+            Filter: <?php echo $filter; ?><br>
+            Today: <?php echo $today; ?><br>
+            Tomorrow: <?php echo date('Y-m-d', strtotime('+1 day')); ?><br>
+            Appointments found: <?php echo count($appointments); ?><br>
+            Tomorrow count: <?php echo $tomorrow_count; ?>
+        </div>
+        
         <div class="stats-grid">
             <div class="stat-card"><div class="stat-number"><?php echo $stats['total']; ?></div><div class="stat-label">Total Today</div></div>
             <div class="stat-card"><div class="stat-number"><?php echo $stats['scheduled']; ?></div><div class="stat-label">Scheduled</div></div>
@@ -260,9 +313,18 @@ if (!$stats) {
         </div>
         
         <div class="filter-bar">
-            <a href="?filter=today" class="filter-btn <?php echo $filter == 'today' ? 'active' : ''; ?>"><i class="fas fa-calendar-day"></i> Today</a>
-            <a href="?filter=tomorrow" class="filter-btn <?php echo $filter == 'tomorrow' ? 'active' : ''; ?>"><i class="fas fa-calendar-plus"></i> Tomorrow</a>
-            <a href="?filter=all" class="filter-btn <?php echo $filter == 'all' ? 'active' : ''; ?>"><i class="fas fa-list"></i> All Appointments</a>
+            <a href="?filter=today" class="filter-btn <?php echo $filter == 'today' ? 'active' : ''; ?>">
+                <i class="fas fa-calendar-day"></i> Today
+            </a>
+            <a href="?filter=tomorrow" class="filter-btn <?php echo $filter == 'tomorrow' ? 'active' : ''; ?>">
+                <i class="fas fa-calendar-plus"></i> Tomorrow
+                <?php if ($tomorrow_count > 0): ?>
+                    <span class="badge-count"><?php echo $tomorrow_count; ?></span>
+                <?php endif; ?>
+            </a>
+            <a href="?filter=all" class="filter-btn <?php echo $filter == 'all' ? 'active' : ''; ?>">
+                <i class="fas fa-list"></i> All Appointments
+            </a>
         </div>
         
         <div class="appointments-table">
@@ -299,6 +361,7 @@ if (!$stats) {
                                     <?php endif; ?>
                                     <?php if ($apt['status'] == 'confirmed'): ?>
                                         <a href="?action=complete&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" class="action-btn btn-complete" onclick="return confirm('Mark as completed?')">✔️ Complete</a>
+                                        <a href="?action=cancel&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" class="action-btn btn-cancel" onclick="return confirm('Cancel this appointment?')">❌ Cancel</a>
                                     <?php endif; ?>
                                 </td>
                             </tr>
@@ -307,7 +370,7 @@ if (!$stats) {
                         <tr>
                             <td colspan="7" style="text-align: center; padding: 3rem;">
                                 <i class="fas fa-calendar-times" style="font-size: 2rem; margin-bottom: 0.5rem; display: block;"></i>
-                                No appointments found.
+                                No appointments found for <?php echo $filter == 'today' ? 'today' : ($filter == 'tomorrow' ? 'tomorrow' : 'this period'); ?>.
                             </td>
                         </tr>
                     <?php endif; ?>
