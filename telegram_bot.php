@@ -96,7 +96,7 @@ if ($text === '/start') {
         $response .= "🔹 /profile - View your profile\n";
         $response .= "🔹 /askappointment - Book a new appointment\n";
         $response .= "🔹 /help - Show all commands\n\n";
-        $response .= "_You will automatically receive appointment reminders._";
+        $response .= "_Use /askappointment to book a new appointment._";
     } else {
         $response = "👋 *Welcome to Shifa Medical Center, $first_name!*\n\n";
         $response .= "I'm your health assistant. To get started:\n\n";
@@ -111,7 +111,7 @@ if ($text === '/start') {
         $response .= "• /profile - View your profile\n";
         $response .= "• /askappointment - Book a new appointment\n";
         $response .= "• /help - Show all commands\n\n";
-        $response .= "_You will receive automatic reminders for your appointments._";
+        $response .= "_Use /askappointment to book a new appointment._";
     }
     
     resetUserBookingSession($chat_id);
@@ -214,6 +214,18 @@ if ($text === '/next') {
     }
     
     try {
+        // Debug log
+        $debug_log = date('Y-m-d H:i:s') . " - /next called for patient_id: " . $patient['patient_id'] . "\n";
+        file_put_contents('/tmp/bot_debug.log', $debug_log, FILE_APPEND);
+        
+        // First, check if patient has ANY appointments
+        $check_stmt = $pdo->prepare("SELECT COUNT(*) FROM appointments WHERE patient_id = ?");
+        $check_stmt->execute([$patient['patient_id']]);
+        $total_appointments = $check_stmt->fetchColumn();
+        
+        file_put_contents('/tmp/bot_debug.log', date('Y-m-d H:i:s') . " - Total appointments: " . $total_appointments . "\n", FILE_APPEND);
+        
+        // Check for confirmed appointments
         $apt_stmt = $pdo->prepare("
             SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
             FROM appointments a
@@ -230,6 +242,8 @@ if ($text === '/next') {
         $apt_stmt->execute([$patient['patient_id']]);
         $appointment = $apt_stmt->fetch();
         
+        file_put_contents('/tmp/bot_debug.log', date('Y-m-d H:i:s') . " - Query result: " . ($appointment ? 'Found appointment' : 'No appointment found') . "\n", FILE_APPEND);
+        
         if ($appointment) {
             $response = "📅 *Your Next Confirmed Appointment*\n\n";
             $response .= "📆 Date: " . date('l, F j, Y', strtotime($appointment['appointment_date'])) . "\n";
@@ -239,15 +253,21 @@ if ($text === '/next') {
             $response .= "_Please arrive 10 minutes early!_";
         } else {
             $response = "📅 *No Upcoming Confirmed Appointments*\n\n";
-            $response .= "You have no confirmed upcoming appointments.\n\n";
-            $response .= "• Check /appointments to see pending requests\n";
+            if ($total_appointments > 0) {
+                $response .= "You have " . $total_appointments . " appointment(s) but none are confirmed.\n\n";
+                $response .= "• Check /appointments to see pending requests\n";
+            } else {
+                $response .= "You have no appointments at all.\n\n";
+            }
             $response .= "• Book a new appointment using /askappointment\n";
             $response .= "• Or visit: https://shifacenter.me/patient/book_appointment.php";
         }
         
         sendMessage($chat_id, $response, $bot_token);
     } catch (Exception $e) {
-        sendMessage($chat_id, "❌ Error fetching appointments. Please try again later.", $bot_token);
+        $error_msg = date('Y-m-d H:i:s') . " - ERROR in /next: " . $e->getMessage() . "\n";
+        file_put_contents('/tmp/bot_debug.log', $error_msg, FILE_APPEND);
+        sendMessage($chat_id, "❌ Error fetching appointments. Please try again later.\n\nError: " . $e->getMessage(), $bot_token);
     }
     exit();
 }
