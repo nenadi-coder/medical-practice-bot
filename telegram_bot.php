@@ -352,7 +352,7 @@ if ($text === '/queue') {
 }
 
 // ========== DEFAULT: Unknown command ==========
-$response = "🤖 *I didn't understand that.*\n\n";
+$response = " *I didn't understand that.*\n\n";
 $response .= "Send /help to see all available commands.\n\n";
 $response .= "Or visit our website: https://shifacenter.me";
 
