@@ -135,9 +135,9 @@ if ($filter == 'tomorrow') {
     $date_filter = '';
 }
 
-// Build query based on filter
+// Build query based on filter - INCLUDING send_sms column
 if ($filter == 'all') {
-    $sql = "SELECT a.*, 
+    $sql = "SELECT a.*, a.send_sms,
             CONCAT(p.first_name, ' ', p.last_name) as patient_name,
             p.phone as patient_phone,
             CONCAT(d.first_name, ' ', d.last_name) as doctor_name
@@ -148,7 +148,7 @@ if ($filter == 'all') {
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
 } else {
-    $sql = "SELECT a.*, 
+    $sql = "SELECT a.*, a.send_sms,
             CONCAT(p.first_name, ' ', p.last_name) as patient_name,
             p.phone as patient_phone,
             CONCAT(d.first_name, ' ', d.last_name) as doctor_name
@@ -192,7 +192,7 @@ if (!$stats) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Nurse Dashboard | Medical Practice</title>
+    <title>Nurse Dashboard | Shifa Medical Center</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
@@ -366,17 +366,23 @@ if (!$stats) {
                                 <td><span class="queue-number">#<?php echo $apt['queue_number']; ?></span></td>
                                 <td>
                                     <span class="status-badge status-<?php echo $apt['status']; ?>">
-                                        <i class="fas <?php echo $apt['status'] == 'scheduled' ? 'fa-clock' : ($apt['status'] == 'confirmed' ? 'fa-check-circle' : ($apt['status'] == 'completed' ? 'fa-flag-checkered' : ($apt['status'] == 'cancelled' ? 'fa-ban' : 'fa-user-slash'))); ?>"></i>
+                                        <i class="fas <?php 
+                                            if ($apt['status'] == 'scheduled') echo 'fa-clock';
+                                            elseif ($apt['status'] == 'confirmed') echo 'fa-check-circle';
+                                            elseif ($apt['status'] == 'completed') echo 'fa-flag-checkered';
+                                            elseif ($apt['status'] == 'cancelled') echo 'fa-ban';
+                                            else echo 'fa-user-slash';
+                                        ?>"></i>
                                         <?php echo ucfirst($apt['status']); ?>
                                     </span>
-                                </td>
+                                </div>
                                 <td>
                                     <?php if (isset($apt['send_sms']) && $apt['send_sms'] == 1): ?>
                                         <span class="sms-badge sms-yes"><i class="fas fa-check"></i> Yes</span>
                                     <?php else: ?>
                                         <span class="sms-badge sms-no"><i class="fas fa-times"></i> No</span>
                                     <?php endif; ?>
-                                </td>
+                                </div>
                                 <td>
                                     <?php if ($apt['status'] == 'scheduled'): ?>
                                         <a href="?action=confirm&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" 
@@ -413,13 +419,17 @@ if (!$stats) {
                                             <i class="fas fa-times"></i> Cancel
                                         </a>
                                     <?php endif; ?>
-                                </td>
+                                    
+                                    <?php if ($apt['status'] == 'completed' || $apt['status'] == 'cancelled' || $apt['status'] == 'no-show'): ?>
+                                        <span style="color: #94a3b8; font-size: 0.7rem;">—</span>
+                                    <?php endif; ?>
+                                 </div>
                                 <td>
                                     <a href="print_ticket.php?id=<?php echo $apt['appointment_id']; ?>" 
                                        class="print-ticket" target="_blank">
                                         <i class="fas fa-print"></i> Print
                                     </a>
-                                </td>
+                                </div>
                             </tr>
                         <?php endforeach; ?>
                     <?php else: ?>
@@ -427,11 +437,11 @@ if (!$stats) {
                             <td colspan="9">
                                 <i class="fas fa-calendar-times" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></i>
                                 No appointments found for this date.
-                            </td>
-                        </tr>
+                            </div>
+                        </div>
                     <?php endif; ?>
                 </tbody>
-            </table>
+            </div>
         </div>
     </div>
 </body>
