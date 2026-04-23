@@ -1,5 +1,5 @@
 <?php
-session_start(); // IMPORTANT - MUST BE FIRST
+session_start();
 require_once '../includes/config.php';
 
 // ========== SMS FUNCTION ==========
@@ -127,33 +127,16 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
 
 // Get filter from URL
 $filter = isset($_GET['filter']) ? $_GET['filter'] : 'today';
+$date_filter = $today;
+
+if ($filter == 'tomorrow') {
+    $date_filter = date('Y-m-d', strtotime('+1 day'));
+} elseif ($filter == 'all') {
+    $date_filter = '';
+}
 
 // Build query based on filter
-if ($filter == 'today') {
-    $sql = "SELECT a.*, 
-            CONCAT(p.first_name, ' ', p.last_name) as patient_name,
-            p.phone as patient_phone,
-            CONCAT(d.first_name, ' ', d.last_name) as doctor_name
-            FROM appointments a
-            JOIN patients p ON a.patient_id = p.patient_id
-            JOIN doctors d ON a.doctor_id = d.doctor_id
-            WHERE a.appointment_date = CURDATE()
-            ORDER BY a.appointment_time ASC";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute();
-} elseif ($filter == 'tomorrow') {
-    $sql = "SELECT a.*, 
-            CONCAT(p.first_name, ' ', p.last_name) as patient_name,
-            p.phone as patient_phone,
-            CONCAT(d.first_name, ' ', d.last_name) as doctor_name
-            FROM appointments a
-            JOIN patients p ON a.patient_id = p.patient_id
-            JOIN doctors d ON a.doctor_id = d.doctor_id
-            WHERE a.appointment_date = DATE_ADD(CURDATE(), INTERVAL 1 DAY)
-            ORDER BY a.appointment_time ASC";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute();
-} else {
+if ($filter == 'all') {
     $sql = "SELECT a.*, 
             CONCAT(p.first_name, ' ', p.last_name) as patient_name,
             p.phone as patient_phone,
@@ -164,6 +147,18 @@ if ($filter == 'today') {
             ORDER BY a.appointment_date DESC, a.appointment_time ASC";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
+} else {
+    $sql = "SELECT a.*, 
+            CONCAT(p.first_name, ' ', p.last_name) as patient_name,
+            p.phone as patient_phone,
+            CONCAT(d.first_name, ' ', d.last_name) as doctor_name
+            FROM appointments a
+            JOIN patients p ON a.patient_id = p.patient_id
+            JOIN doctors d ON a.doctor_id = d.doctor_id
+            WHERE a.appointment_date = ?
+            ORDER BY a.appointment_time ASC";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$date_filter]);
 }
 $appointments = $stmt->fetchAll();
 
@@ -175,9 +170,9 @@ $stats_sql = "SELECT
               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
               SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
               SUM(CASE WHEN status = 'no-show' THEN 1 ELSE 0 END) as noshow
-              FROM appointments WHERE appointment_date = CURDATE()";
+              FROM appointments WHERE appointment_date = ?";
 $stats_stmt = $pdo->prepare($stats_sql);
-$stats_stmt->execute();
+$stats_stmt->execute([$today]);
 $stats = $stats_stmt->fetch();
 
 if (!$stats) {
@@ -190,9 +185,6 @@ if (!$stats) {
         'noshow' => 0
     ];
 }
-
-// Get tomorrow count for badge
-$tomorrow_count = $pdo->query("SELECT COUNT(*) FROM appointments WHERE appointment_date = DATE_ADD(CURDATE(), INTERVAL 1 DAY)")->fetchColumn();
 ?>
 
 <!DOCTYPE html>
@@ -200,7 +192,7 @@ $tomorrow_count = $pdo->query("SELECT COUNT(*) FROM appointments WHERE appointme
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Nurse Dashboard | Shifa Medical Center</title>
+    <title>Nurse Dashboard | Medical Practice</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
@@ -241,7 +233,6 @@ $tomorrow_count = $pdo->query("SELECT COUNT(*) FROM appointments WHERE appointme
         .filter-btn { padding: 0.5rem 1.2rem; border: none; border-radius: 60px; cursor: pointer; text-decoration: none; background: #f1f5f9; color: #1e2a3e; font-weight: 600; font-size: 0.85rem; transition: all 0.2s ease; }
         .filter-btn.active { background: linear-gradient(95deg, #4f46e5, #7c3aed); color: white; }
         .filter-btn:hover:not(.active) { background: #e2e8f0; }
-        .badge { background: #ef4444; color: white; border-radius: 20px; padding: 2px 8px; font-size: 0.7rem; margin-left: 5px; }
         .filter-info { margin-left: auto; font-size: 0.85rem; color: #5b6e8c; }
         .appointments-table { background: white; border-radius: 1.2rem; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); overflow-x: auto; border: 1px solid rgba(102, 126, 234, 0.1); }
         table { width: 100%; border-collapse: collapse; min-width: 900px; }
@@ -333,9 +324,6 @@ $tomorrow_count = $pdo->query("SELECT COUNT(*) FROM appointments WHERE appointme
             </a>
             <a href="?filter=tomorrow" class="filter-btn <?php echo $filter == 'tomorrow' ? 'active' : ''; ?>">
                 <i class="fas fa-calendar-plus"></i> Tomorrow
-                <?php if($tomorrow_count > 0): ?>
-                    <span class="badge"><?php echo $tomorrow_count; ?></span>
-                <?php endif; ?>
             </a>
             <a href="?filter=all" class="filter-btn <?php echo $filter == 'all' ? 'active' : ''; ?>">
                 <i class="fas fa-list"></i> All Appointments
