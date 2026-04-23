@@ -15,7 +15,7 @@ $chat_id = $message['chat']['id'];
 $text = trim($message['text'] ?? '');
 $first_name = $message['from']['first_name'] ?? '';
 
-// ========== FILE-BASED STORAGE (No sessions, no database table) ==========
+// ========== FILE-BASED STORAGE (No sessions) ==========
 
 $booking_storage_dir = '/tmp/booking_data';
 if (!file_exists($booking_storage_dir)) {
