@@ -542,7 +542,7 @@ if (!$stats) {
 </head>
 <body>
     <div class="navbar">
-        <h1><i class="fas fa-stethoscope"></i>Shifa Medical Center</h1>
+        <h1><i class="fas fa-stethoscope"></i> Medical Practice</h1>
         <div class="user-info">
             <i class="fas fa-user-nurse" style="color: #4f46e5;"></i>
             <span>Welcome, <?php echo htmlspecialchars($_SESSION['nurse_name']); ?></span>
