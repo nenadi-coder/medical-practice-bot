@@ -1,8 +1,7 @@
 <?php
 require_once '../includes/config.php';
 
-// ========== SMS FUNCTION - ADDED ==========
-// REPLACE WITH YOUR EASYSENDSMS CREDENTIALS
+// ========== SMS FUNCTION ==========
 define('EASYSENDSMS_USERNAME', 'nadoouamhou6s2026');
 define('EASYSENDSMS_API_KEY', 'IBxpv37c');
 
@@ -45,6 +44,7 @@ function sendSMS($phoneNumber, $message) {
 // ========== END OF SMS FUNCTION ==========
 
 // Check if nurse is logged in
+session_start();
 if (!isset($_SESSION['nurse_id'])) {
     header('Location: login.php');
     exit();
@@ -73,7 +73,6 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
                 $new_status = 'confirmed';
                 $message = 'Appointment confirmed successfully';
                 
-                // ========== SMS SENT WHEN NURSE CONFIRMS ==========
                 // Get patient phone and SMS preference
                 $apt_sql = "SELECT a.send_sms, p.phone, p.first_name, p.last_name, 
                                    d.first_name as doctor_first, d.last_name as doctor_last,
@@ -86,22 +85,20 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
                 $apt_stmt->execute([$appointment_id]);
                 $apt = $apt_stmt->fetch();
                 
-                // Send SMS only if patient requested it (send_sms = 1)
+                // Send SMS only if patient requested it
                 if ($apt && $apt['send_sms'] == 1) {
-                    // Short message to save credits
                     $date = date('d/m', strtotime($apt['appointment_date']));
                     $time = date('H:i', strtotime($apt['appointment_time']));
                     $smsMessage = "✅ Appt confirmed: $date at $time with Dr. {$apt['doctor_last']}. Queue #{$apt['queue_number']}";
                     
                     if (sendSMS($apt['phone'], $smsMessage)) {
-                        $message .= " & SMS sent to patient";
+                        $message .= " & SMS sent";
                     } else {
-                        $message .= " but SMS failed to send";
+                        $message .= " (SMS failed)";
                     }
                 } elseif ($apt && $apt['send_sms'] == 0) {
-                    $message .= " (Patient did not request SMS)";
+                    $message .= " (No SMS requested)";
                 }
-                // ========== END OF SMS ADDITION ==========
                 break;
             case 'cancel':
                 $new_status = 'cancelled';
@@ -133,7 +130,7 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
     exit();
 }
 
-// Get filter from URL (today, tomorrow, all)
+// Get filter from URL
 $filter = isset($_GET['filter']) ? $_GET['filter'] : 'today';
 $date_filter = $today;
 
@@ -200,26 +197,19 @@ if (!$stats) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Nurse Dashboard | Medical Practice</title>
+    <title>Nurse Dashboard | Shifa Medical Center</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: 'Inter', sans-serif;
             background: linear-gradient(125deg, #e0f0ff 0%, #f5f0fc 100%);
             min-height: 100vh;
             color: #1e2a3e;
         }
-
-        /* Modern Navbar */
         .navbar {
             background: white;
             backdrop-filter: blur(10px);
@@ -232,310 +222,56 @@ if (!$stats) {
             flex-wrap: wrap;
             gap: 1rem;
         }
-
-        .navbar h1 {
-            font-size: 1.5rem;
-            font-weight: 700;
-            background: linear-gradient(120deg, #1e2a3e, #2d3a5e);
-            background-clip: text;
-            -webkit-background-clip: text;
-            color: transparent;
-        }
-
-        .navbar h1 i {
-            background: none;
-            color: #4f46e5;
-            margin-right: 8px;
-        }
-
-        .user-info {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            background: #f1f5f9;
-            padding: 0.5rem 1rem;
-            border-radius: 60px;
-        }
-
-        .user-info span {
-            font-weight: 600;
-            color: #1e2a3e;
-        }
-
-        .logout {
-            background: #f56565;
-            padding: 0.5rem 1rem;
-            border-radius: 60px;
-            color: white;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 0.85rem;
-            transition: all 0.2s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .logout:hover {
-            background: #e53e3e;
-            transform: translateY(-1px);
-        }
-
-        /* Container */
-        .container {
-            max-width: 1400px;
-            margin: 2rem auto;
-            padding: 0 1.5rem;
-        }
-
-        /* Stats Grid */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-            gap: 1rem;
-            margin-bottom: 2rem;
-        }
-
-        .stat-card {
-            background: white;
-            padding: 1.2rem;
-            border-radius: 1.2rem;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-            text-align: center;
-            border: 1px solid rgba(102, 126, 234, 0.1);
-            transition: all 0.2s ease;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
-        }
-
-        .stat-number {
-            font-size: 2rem;
-            font-weight: 800;
-            background: linear-gradient(95deg, #4f46e5, #7c3aed);
-            background-clip: text;
-            -webkit-background-clip: text;
-            color: transparent;
-        }
-
-        .stat-label {
-            color: #5b6e8c;
-            margin-top: 0.4rem;
-            font-size: 0.8rem;
-            font-weight: 500;
-        }
-
-        /* Filter Bar */
-        .filter-bar {
-            background: white;
-            padding: 1rem 1.5rem;
-            border-radius: 1.2rem;
-            margin-bottom: 2rem;
-            display: flex;
-            gap: 1rem;
-            align-items: center;
-            flex-wrap: wrap;
-            border: 1px solid rgba(102, 126, 234, 0.1);
-        }
-
-        .filter-btn {
-            padding: 0.5rem 1.2rem;
-            border: none;
-            border-radius: 60px;
-            cursor: pointer;
-            text-decoration: none;
-            background: #f1f5f9;
-            color: #1e2a3e;
-            font-weight: 600;
-            font-size: 0.85rem;
-            transition: all 0.2s ease;
-        }
-
-        .filter-btn.active {
-            background: linear-gradient(95deg, #4f46e5, #7c3aed);
-            color: white;
-        }
-
-        .filter-btn:hover:not(.active) {
-            background: #e2e8f0;
-        }
-
-        .filter-info {
-            margin-left: auto;
-            font-size: 0.85rem;
-            color: #5b6e8c;
-        }
-
-        /* Appointments Table */
-        .appointments-table {
-            background: white;
-            border-radius: 1.2rem;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-            overflow-x: auto;
-            border: 1px solid rgba(102, 126, 234, 0.1);
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            min-width: 900px;
-        }
-
-        th {
-            background: linear-gradient(95deg, #4f46e5, #7c3aed);
-            color: white;
-            padding: 1rem;
-            text-align: left;
-            font-weight: 600;
-            font-size: 0.85rem;
-        }
-
-        td {
-            padding: 1rem;
-            border-bottom: 1px solid #e2e8f0;
-            font-size: 0.85rem;
-        }
-
-        tr:hover {
-            background: #f8fafc;
-        }
-
-        .status-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            padding: 0.25rem 0.75rem;
-            border-radius: 60px;
-            font-size: 0.7rem;
-            font-weight: 700;
-            text-transform: uppercase;
-        }
-
+        .navbar h1 { font-size: 1.5rem; font-weight: 700; background: linear-gradient(120deg, #1e2a3e, #2d3a5e); background-clip: text; -webkit-background-clip: text; color: transparent; }
+        .navbar h1 i { background: none; color: #4f46e5; margin-right: 8px; }
+        .user-info { display: flex; align-items: center; gap: 1rem; background: #f1f5f9; padding: 0.5rem 1rem; border-radius: 60px; }
+        .user-info span { font-weight: 600; color: #1e2a3e; }
+        .logout { background: #f56565; padding: 0.5rem 1rem; border-radius: 60px; color: white; text-decoration: none; font-weight: 600; font-size: 0.85rem; transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px; }
+        .logout:hover { background: #e53e3e; transform: translateY(-1px); }
+        .container { max-width: 1400px; margin: 2rem auto; padding: 0 1.5rem; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+        .stat-card { background: white; padding: 1.2rem; border-radius: 1.2rem; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); text-align: center; border: 1px solid rgba(102, 126, 234, 0.1); transition: all 0.2s ease; }
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08); }
+        .stat-number { font-size: 2rem; font-weight: 800; background: linear-gradient(95deg, #4f46e5, #7c3aed); background-clip: text; -webkit-background-clip: text; color: transparent; }
+        .stat-label { color: #5b6e8c; margin-top: 0.4rem; font-size: 0.8rem; font-weight: 500; }
+        .filter-bar { background: white; padding: 1rem 1.5rem; border-radius: 1.2rem; margin-bottom: 2rem; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; border: 1px solid rgba(102, 126, 234, 0.1); }
+        .filter-btn { padding: 0.5rem 1.2rem; border: none; border-radius: 60px; cursor: pointer; text-decoration: none; background: #f1f5f9; color: #1e2a3e; font-weight: 600; font-size: 0.85rem; transition: all 0.2s ease; }
+        .filter-btn.active { background: linear-gradient(95deg, #4f46e5, #7c3aed); color: white; }
+        .filter-btn:hover:not(.active) { background: #e2e8f0; }
+        .filter-info { margin-left: auto; font-size: 0.85rem; color: #5b6e8c; }
+        .appointments-table { background: white; border-radius: 1.2rem; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); overflow-x: auto; border: 1px solid rgba(102, 126, 234, 0.1); }
+        table { width: 100%; border-collapse: collapse; min-width: 900px; }
+        th { background: linear-gradient(95deg, #4f46e5, #7c3aed); color: white; padding: 1rem; text-align: left; font-weight: 600; font-size: 0.85rem; }
+        td { padding: 1rem; border-bottom: 1px solid #e2e8f0; font-size: 0.85rem; }
+        tr:hover { background: #f8fafc; }
+        .status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 0.25rem 0.75rem; border-radius: 60px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
         .status-scheduled { background: #e3f2fd; color: #1976d2; }
         .status-confirmed { background: #e8f5e8; color: #388e3c; }
         .status-completed { background: #f3e5f5; color: #7b1fa2; }
         .status-cancelled { background: #ffebee; color: #c62828; }
         .status-no-show { background: #fff3e0; color: #e65100; }
-
-        .action-btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            padding: 0.4rem 0.8rem;
-            margin: 0.2rem;
-            border: none;
-            border-radius: 60px;
-            cursor: pointer;
-            text-decoration: none;
-            font-size: 0.7rem;
-            font-weight: 600;
-            transition: all 0.2s ease;
-        }
-
+        .action-btn { display: inline-flex; align-items: center; gap: 5px; padding: 0.4rem 0.8rem; margin: 0.2rem; border: none; border-radius: 60px; cursor: pointer; text-decoration: none; font-size: 0.7rem; font-weight: 600; transition: all 0.2s ease; }
         .btn-confirm { background: #48bb78; color: white; }
         .btn-complete { background: #9f7aea; color: white; }
         .btn-cancel { background: #f56565; color: white; }
         .btn-noshow { background: #ed8936; color: white; }
-
-        .action-btn:hover {
-            transform: translateY(-1px);
-            filter: brightness(0.9);
-        }
-
-        .print-ticket {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            background: #718096;
-            color: white;
-            padding: 0.4rem 0.8rem;
-            border-radius: 60px;
-            text-decoration: none;
-            font-size: 0.7rem;
-            font-weight: 600;
-            transition: all 0.2s ease;
-        }
-
-        .print-ticket:hover {
-            background: #4a5568;
-            transform: translateY(-1px);
-        }
-
-        .sms-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 0.25rem 0.6rem;
-            border-radius: 60px;
-            font-size: 0.65rem;
-            font-weight: 700;
-        }
-
-        .sms-yes {
-            background: #e8f5e8;
-            color: #2e7d32;
-        }
-
-        .sms-no {
-            background: #ffebee;
-            color: #c62828;
-        }
-
-        .queue-number {
-            font-weight: 700;
-            color: #4f46e5;
-            font-size: 1rem;
-        }
-
-        /* Messages */
-        .message {
-            padding: 1rem;
-            border-radius: 1rem;
-            margin-bottom: 1.5rem;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .success {
-            background: #e8f5e8;
-            color: #2e7d32;
-            border-left: 4px solid #48bb78;
-        }
-
-        .error {
-            background: #ffebee;
-            color: #c62828;
-            border-left: 4px solid #f56565;
-        }
-
-        .empty-row td {
-            text-align: center;
-            padding: 3rem;
-            color: #94a3b8;
-        }
-
+        .action-btn:hover { transform: translateY(-1px); filter: brightness(0.9); }
+        .print-ticket { display: inline-flex; align-items: center; gap: 5px; background: #718096; color: white; padding: 0.4rem 0.8rem; border-radius: 60px; text-decoration: none; font-size: 0.7rem; font-weight: 600; transition: all 0.2s ease; }
+        .print-ticket:hover { background: #4a5568; transform: translateY(-1px); }
+        .sms-badge { display: inline-flex; align-items: center; gap: 4px; padding: 0.25rem 0.6rem; border-radius: 60px; font-size: 0.65rem; font-weight: 700; }
+        .sms-yes { background: #e8f5e8; color: #2e7d32; }
+        .sms-no { background: #ffebee; color: #c62828; }
+        .queue-number { font-weight: 700; color: #4f46e5; font-size: 1rem; }
+        .message { padding: 1rem; border-radius: 1rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 10px; }
+        .success { background: #e8f5e8; color: #2e7d32; border-left: 4px solid #48bb78; }
+        .error { background: #ffebee; color: #c62828; border-left: 4px solid #f56565; }
+        .empty-row td { text-align: center; padding: 3rem; color: #94a3b8; }
         @media (max-width: 768px) {
-            .navbar {
-                flex-direction: column;
-                text-align: center;
-            }
-            .stats-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-            .filter-bar {
-                justify-content: center;
-            }
-            .filter-info {
-                margin-left: 0;
-                width: 100%;
-                text-align: center;
-            }
-            .container {
-                padding: 0 1rem;
-            }
+            .navbar { flex-direction: column; text-align: center; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+            .filter-bar { justify-content: center; }
+            .filter-info { margin-left: 0; width: 100%; text-align: center; }
+            .container { padding: 0 1rem; }
         }
     </style>
 </head>
@@ -682,7 +418,7 @@ if (!$stats) {
                                             </a>
                                         <?php endif; ?>
                                     </div>
-                                </td>
+                                </div>
                                 <td>
                                     <a href="print_ticket.php?id=<?php echo $apt['appointment_id']; ?>" 
                                        class="print-ticket" target="_blank">
