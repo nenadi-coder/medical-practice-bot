@@ -1,4 +1,9 @@
 <?php
+// Force session to work properly - MUST be first
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 require_once 'includes/config.php';
 
 $bot_token = '8330456846:AAFJFM3cy7rbKr5diPbcYi8QaIDDIhktpVU';
@@ -15,61 +20,75 @@ $chat_id = $message['chat']['id'];
 $text = trim($message['text'] ?? '');
 $first_name = $message['from']['first_name'] ?? '';
 
+// Debug logging
+file_put_contents('/tmp/bot_debug.log', date('Y-m-d H:i:s') . " - Chat ID: $chat_id - Text: $text\n", FILE_APPEND);
+
 // Check if user is already linked
 $stmt = $pdo->prepare("SELECT * FROM patients WHERE telegram_chat_id = ? OR telegram_user_id = ?");
 $stmt->execute([$chat_id, $chat_id]);
 $patient = $stmt->fetch();
 
-// Session management for appointment booking - User specific
-session_start();
-
-// Use chat_id as unique key to prevent conflicts
-$user_session_key = "booking_" . $chat_id;
-
-if (!isset($_SESSION[$user_session_key])) {
-    $_SESSION[$user_session_key] = [
-        'step' => null,
-        'data' => []
-    ];
+// Session functions with proper error handling
+function getUserSessionKey($chat_id) {
+    return "booking_" . $chat_id;
 }
 
-// Function to reset user's booking session
 function resetUserBookingSession($chat_id) {
-    $user_session_key = "booking_" . $chat_id;
-    $_SESSION[$user_session_key] = [
-        'step' => null,
-        'data' => []
-    ];
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    $key = getUserSessionKey($chat_id);
+    $_SESSION[$key] = ['step' => null, 'data' => []];
+    file_put_contents('/tmp/bot_debug.log', date('Y-m-d H:i:s') . " - Reset session for $chat_id\n", FILE_APPEND);
 }
 
-// Function to get user's booking step
 function getBookingStep($chat_id) {
-    $user_session_key = "booking_" . $chat_id;
-    return $_SESSION[$user_session_key]['step'] ?? null;
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    $key = getUserSessionKey($chat_id);
+    $step = $_SESSION[$key]['step'] ?? null;
+    file_put_contents('/tmp/bot_debug.log', date('Y-m-d H:i:s') . " - Get step for $chat_id: $step\n", FILE_APPEND);
+    return $step;
 }
 
-// Function to get user's booking data
 function getBookingData($chat_id) {
-    $user_session_key = "booking_" . $chat_id;
-    return $_SESSION[$user_session_key]['data'] ?? [];
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    $key = getUserSessionKey($chat_id);
+    return $_SESSION[$key]['data'] ?? [];
 }
 
-// Function to set user's booking step
 function setBookingStep($chat_id, $step) {
-    $user_session_key = "booking_" . $chat_id;
-    $_SESSION[$user_session_key]['step'] = $step;
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    $key = getUserSessionKey($chat_id);
+    $_SESSION[$key]['step'] = $step;
+    file_put_contents('/tmp/bot_debug.log', date('Y-m-d H:i:s') . " - Set step for $chat_id to: $step\n", FILE_APPEND);
 }
 
-// Function to set user's booking data
 function setBookingData($chat_id, $data) {
-    $user_session_key = "booking_" . $chat_id;
-    $_SESSION[$user_session_key]['data'] = $data;
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    $key = getUserSessionKey($chat_id);
+    $_SESSION[$key]['data'] = $data;
 }
 
-// Function to update specific booking data
 function updateBookingData($chat_id, $key, $value) {
-    $user_session_key = "booking_" . $chat_id;
-    $_SESSION[$user_session_key]['data'][$key] = $value;
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    $user_key = getUserSessionKey($chat_id);
+    $_SESSION[$user_key]['data'][$key] = $value;
+}
+
+// Initialize session for this user if not exists
+$user_key = getUserSessionKey($chat_id);
+if (!isset($_SESSION[$user_key])) {
+    $_SESSION[$user_key] = ['step' => null, 'data' => []];
 }
 
 // ========== COMMAND HANDLERS ==========
@@ -167,9 +186,14 @@ if ($text === '/askappointment') {
     exit();
 }
 
-// ========== BOOKING CONVERSATION HANDLER (Moved here - BEFORE other commands) ==========
+// ========== BOOKING CONVERSATION HANDLER ==========
 $current_step = getBookingStep($chat_id);
-if ($current_step !== null && $text !== '/cancel' && $text !== '/start' && $text !== '/help') {
+
+// Debug: Log current step
+file_put_contents('/tmp/bot_debug.log', date('Y-m-d H:i:s') . " - Current step for $chat_id: '$current_step'\n", FILE_APPEND);
+
+if ($current_step !== null && $current_step !== '' && $text !== '/cancel' && $text !== '/start' && $text !== '/help' && $text !== '/askappointment') {
+    file_put_contents('/tmp/bot_debug.log', date('Y-m-d H:i:s') . " - Handling booking input: $text\n", FILE_APPEND);
     handleBookingConversation($chat_id, $text, $pdo, $bot_token);
     exit();
 }
@@ -381,22 +405,6 @@ function sendMessage($chat_id, $message, $bot_token) {
         'text' => $message,
         'parse_mode' => 'Markdown'
     ];
-    
-    $options = [
-        'http' => [
-            'header' => "Content-type: application/x-www-form-urlencoded\r\n",
-            'method' => 'POST',
-            'content' => http_build_query($data)
-        ]
-    ];
-    
-    $context = stream_context_create($options);
-    @file_get_contents($url, false, $context);
-}
-
-function sendChatAction($chat_id, $action, $bot_token) {
-    $url = "https://api.telegram.org/bot{$bot_token}/sendChatAction";
-    $data = ['chat_id' => $chat_id, 'action' => $action];
     
     $options = [
         'http' => [
