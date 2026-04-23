@@ -1,4 +1,5 @@
 <?php
+session_start(); // IMPORTANT - MUST BE FIRST
 require_once '../includes/config.php';
 
 // ========== SMS FUNCTION ==========
@@ -9,7 +10,6 @@ function sendSMS($phoneNumber, $message) {
     $username = EASYSENDSMS_USERNAME;
     $apiKey = EASYSENDSMS_API_KEY;
     
-    // Format phone number for Algeria: remove leading zeros, add 213
     $phoneNumber = preg_replace('/^0+/', '', $phoneNumber);
     if (!preg_match('/^213/', $phoneNumber)) {
         $phoneNumber = '213' . $phoneNumber;
@@ -41,10 +41,8 @@ function sendSMS($phoneNumber, $message) {
     
     return $response && strpos($response, 'OK:') === 0;
 }
-// ========== END OF SMS FUNCTION ==========
 
 // Check if nurse is logged in
-session_start();
 if (!isset($_SESSION['nurse_id'])) {
     header('Location: login.php');
     exit();
@@ -59,7 +57,6 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
     $action = $_GET['action'];
     $nurse_id = $_SESSION['nurse_id'];
     
-    // Verify appointment exists
     $check_sql = "SELECT appointment_id FROM appointments WHERE appointment_id = ?";
     $check_stmt = $pdo->prepare($check_sql);
     $check_stmt->execute([$appointment_id]);
@@ -73,7 +70,6 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
                 $new_status = 'confirmed';
                 $message = 'Appointment confirmed successfully';
                 
-                // Get patient phone and SMS preference
                 $apt_sql = "SELECT a.send_sms, p.phone, p.first_name, p.last_name, 
                                    d.first_name as doctor_first, d.last_name as doctor_last,
                                    a.appointment_date, a.appointment_time, a.queue_number
@@ -85,7 +81,6 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
                 $apt_stmt->execute([$appointment_id]);
                 $apt = $apt_stmt->fetch();
                 
-                // Send SMS only if patient requested it
                 if ($apt && $apt['send_sms'] == 1) {
                     $date = date('d/m', strtotime($apt['appointment_date']));
                     $time = date('H:i', strtotime($apt['appointment_time']));
@@ -126,22 +121,15 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
     } else {
         $_SESSION['error'] = 'Invalid appointment';
     }
-    header('Location: dashboard.php');
+    header('Location: dashboard.php?filter=' . urlencode($_GET['filter'] ?? 'today'));
     exit();
 }
 
 // Get filter from URL
 $filter = isset($_GET['filter']) ? $_GET['filter'] : 'today';
-$date_filter = $today;
-
-if ($filter == 'tomorrow') {
-    $date_filter = date('Y-m-d', strtotime('+1 day'));
-} elseif ($filter == 'all') {
-    $date_filter = '';
-}
 
 // Build query based on filter
-if ($filter == 'all') {
+if ($filter == 'today') {
     $sql = "SELECT a.*, 
             CONCAT(p.first_name, ' ', p.last_name) as patient_name,
             p.phone as patient_phone,
@@ -149,7 +137,20 @@ if ($filter == 'all') {
             FROM appointments a
             JOIN patients p ON a.patient_id = p.patient_id
             JOIN doctors d ON a.doctor_id = d.doctor_id
-            ORDER BY a.appointment_date DESC, a.appointment_time ASC";
+            WHERE a.appointment_date = CURDATE()
+            ORDER BY a.appointment_time ASC";
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute();
+} elseif ($filter == 'tomorrow') {
+    $sql = "SELECT a.*, 
+            CONCAT(p.first_name, ' ', p.last_name) as patient_name,
+            p.phone as patient_phone,
+            CONCAT(d.first_name, ' ', d.last_name) as doctor_name
+            FROM appointments a
+            JOIN patients p ON a.patient_id = p.patient_id
+            JOIN doctors d ON a.doctor_id = d.doctor_id
+            WHERE a.appointment_date = DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+            ORDER BY a.appointment_time ASC";
     $stmt = $pdo->prepare($sql);
     $stmt->execute();
 } else {
@@ -160,10 +161,9 @@ if ($filter == 'all') {
             FROM appointments a
             JOIN patients p ON a.patient_id = p.patient_id
             JOIN doctors d ON a.doctor_id = d.doctor_id
-            WHERE a.appointment_date = ?
-            ORDER BY a.appointment_time ASC";
+            ORDER BY a.appointment_date DESC, a.appointment_time ASC";
     $stmt = $pdo->prepare($sql);
-    $stmt->execute([$date_filter]);
+    $stmt->execute();
 }
 $appointments = $stmt->fetchAll();
 
@@ -175,9 +175,9 @@ $stats_sql = "SELECT
               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
               SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
               SUM(CASE WHEN status = 'no-show' THEN 1 ELSE 0 END) as noshow
-              FROM appointments WHERE appointment_date = ?";
+              FROM appointments WHERE appointment_date = CURDATE()";
 $stats_stmt = $pdo->prepare($stats_sql);
-$stats_stmt->execute([$today]);
+$stats_stmt->execute();
 $stats = $stats_stmt->fetch();
 
 if (!$stats) {
@@ -190,6 +190,9 @@ if (!$stats) {
         'noshow' => 0
     ];
 }
+
+// Get tomorrow count for badge
+$tomorrow_count = $pdo->query("SELECT COUNT(*) FROM appointments WHERE appointment_date = DATE_ADD(CURDATE(), INTERVAL 1 DAY)")->fetchColumn();
 ?>
 
 <!DOCTYPE html>
@@ -238,6 +241,7 @@ if (!$stats) {
         .filter-btn { padding: 0.5rem 1.2rem; border: none; border-radius: 60px; cursor: pointer; text-decoration: none; background: #f1f5f9; color: #1e2a3e; font-weight: 600; font-size: 0.85rem; transition: all 0.2s ease; }
         .filter-btn.active { background: linear-gradient(95deg, #4f46e5, #7c3aed); color: white; }
         .filter-btn:hover:not(.active) { background: #e2e8f0; }
+        .badge { background: #ef4444; color: white; border-radius: 20px; padding: 2px 8px; font-size: 0.7rem; margin-left: 5px; }
         .filter-info { margin-left: auto; font-size: 0.85rem; color: #5b6e8c; }
         .appointments-table { background: white; border-radius: 1.2rem; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); overflow-x: auto; border: 1px solid rgba(102, 126, 234, 0.1); }
         table { width: 100%; border-collapse: collapse; min-width: 900px; }
@@ -329,6 +333,9 @@ if (!$stats) {
             </a>
             <a href="?filter=tomorrow" class="filter-btn <?php echo $filter == 'tomorrow' ? 'active' : ''; ?>">
                 <i class="fas fa-calendar-plus"></i> Tomorrow
+                <?php if($tomorrow_count > 0): ?>
+                    <span class="badge"><?php echo $tomorrow_count; ?></span>
+                <?php endif; ?>
             </a>
             <a href="?filter=all" class="filter-btn <?php echo $filter == 'all' ? 'active' : ''; ?>">
                 <i class="fas fa-list"></i> All Appointments
@@ -383,42 +390,42 @@ if (!$stats) {
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <div class="action-group">
-                                        <?php if ($apt['status'] == 'scheduled'): ?>
-                                            <a href="?action=confirm&id=<?php echo $apt['appointment_id']; ?>" 
-                                               class="action-btn btn-confirm" 
-                                               onclick="return confirm('Confirm this appointment? SMS will be sent if patient requested.');">
-                                                <i class="fas fa-check"></i> Confirm
-                                            </a>
-                                            <a href="?action=cancel&id=<?php echo $apt['appointment_id']; ?>" 
-                                               class="action-btn btn-cancel"
-                                               onclick="return confirm('Cancel this appointment?')">
-                                                <i class="fas fa-times"></i> Cancel
-                                            </a>
-                                        <?php endif; ?>
-                                        
-                                        <?php if ($apt['status'] == 'confirmed'): ?>
-                                            <a href="?action=complete&id=<?php echo $apt['appointment_id']; ?>" 
-                                               class="action-btn btn-complete"
-                                               onclick="return confirm('Mark as completed?')">
-                                                <i class="fas fa-check-double"></i> Complete
-                                            </a>
-                                            <a href="?action=noshow&id=<?php echo $apt['appointment_id']; ?>" 
-                                               class="action-btn btn-noshow"
-                                               onclick="return confirm('Mark patient as no-show?')">
-                                                <i class="fas fa-user-slash"></i> No Show
-                                            </a>
-                                        <?php endif; ?>
-                                        
-                                        <?php if ($apt['status'] == 'scheduled'): ?>
-                                            <a href="?action=noshow&id=<?php echo $apt['appointment_id']; ?>" 
-                                               class="action-btn btn-noshow"
-                                               onclick="return confirm('Mark patient as no-show?')">
-                                                <i class="fas fa-user-slash"></i> No Show
-                                            </a>
-                                        <?php endif; ?>
-                                    </div>
-                                </div>
+                                    <?php if ($apt['status'] == 'scheduled'): ?>
+                                        <a href="?action=confirm&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" 
+                                           class="action-btn btn-confirm" 
+                                           onclick="return confirm('Confirm this appointment? SMS will be sent if patient requested.');">
+                                            <i class="fas fa-check"></i> Confirm
+                                        </a>
+                                        <a href="?action=cancel&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" 
+                                           class="action-btn btn-cancel"
+                                           onclick="return confirm('Cancel this appointment?')">
+                                            <i class="fas fa-times"></i> Cancel
+                                        </a>
+                                        <a href="?action=noshow&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" 
+                                           class="action-btn btn-noshow"
+                                           onclick="return confirm('Mark patient as no-show?')">
+                                            <i class="fas fa-user-slash"></i> No Show
+                                        </a>
+                                    <?php endif; ?>
+                                    
+                                    <?php if ($apt['status'] == 'confirmed'): ?>
+                                        <a href="?action=complete&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" 
+                                           class="action-btn btn-complete"
+                                           onclick="return confirm('Mark as completed?')">
+                                            <i class="fas fa-check-double"></i> Complete
+                                        </a>
+                                        <a href="?action=noshow&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" 
+                                           class="action-btn btn-noshow"
+                                           onclick="return confirm('Mark patient as no-show?')">
+                                            <i class="fas fa-user-slash"></i> No Show
+                                        </a>
+                                        <a href="?action=cancel&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" 
+                                           class="action-btn btn-cancel"
+                                           onclick="return confirm('Cancel this appointment?')">
+                                            <i class="fas fa-times"></i> Cancel
+                                        </a>
+                                    <?php endif; ?>
+                                </td>
                                 <td>
                                     <a href="print_ticket.php?id=<?php echo $apt['appointment_id']; ?>" 
                                        class="print-ticket" target="_blank">
