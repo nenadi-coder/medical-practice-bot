@@ -1,5 +1,17 @@
 <?php
 require_once 'includes/config.php';
+// /showall - Show ALL appointments in database (for debugging)
+if ($text === '/showall') {
+    $all_stmt = $pdo->query("SELECT a.*, p.first_name, p.last_name FROM appointments a JOIN patients p ON a.patient_id = p.patient_id ORDER BY a.appointment_id DESC LIMIT 20");
+    $all = $all_stmt->fetchAll();
+    
+    $response = "📊 *ALL APPOINTMENTS IN DB*\n\n";
+    foreach ($all as $apt) {
+        $response .= "ID:{$apt['appointment_id']} | Patient:{$apt['first_name']} {$apt['last_name']} | Date:{$apt['appointment_date']} | Time:{$apt['appointment_time']} | Status:{$apt['status']}\n";
+    }
+    sendMessage($chat_id, $response, $bot_token);
+    exit();
+}
 
 $bot_token = '8330456846:AAFJFM3cy7rbKr5diPbcYi8QaIDDIhktpVU';
 
