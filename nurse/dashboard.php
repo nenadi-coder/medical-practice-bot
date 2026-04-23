@@ -1,5 +1,7 @@
 <?php
 require_once '../includes/config.php';
+
+
 // TEST: Direct query to see all appointments
 $test_all = $pdo->query("SELECT COUNT(*) FROM appointments")->fetchColumn();
 $test_tomorrow = $pdo->prepare("SELECT COUNT(*) FROM appointments WHERE appointment_date = DATE_ADD(CURDATE(), INTERVAL 1 DAY)");
