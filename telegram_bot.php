@@ -399,8 +399,10 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
                     
                     $response = "✅ Doctor selected: Dr. " . $doctors[$index]['first_name'] . ' ' . $doctors[$index]['last_name'] . "\n\n";
                     $response .= "Step 2: Select a date\n\n";
-                    $response .= "Please enter the appointment date (format: YYYY-MM-DD)\n";
-                    $response .= "Example: " . date('Y-m-d', strtotime('+1 day')) . "\n\n";
+                    $response .= "Please enter the appointment date in any of these formats:\n";
+                    $response .= "• YYYY-MM-DD (example: 2026-04-25)\n";
+                    $response .= "• DD-MM-YYYY (example: 25-04-2026)\n";
+                    $response .= "• DD/MM/YYYY (example: 25/04/2026)\n\n";
                     $response .= "_Note: Date must be at least tomorrow._";
                     sendMessage($chat_id, $response, $bot_token);
                 } else {
@@ -412,6 +414,23 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
             break;
             
         case 'select_date':
+            // Convert common date formats to YYYY-MM-DD
+            // Format 1: DD-MM-YYYY (e.g., 25-04-2026)
+            if (preg_match('/^\d{2}-\d{2}-\d{4}$/', $text)) {
+                $parts = explode('-', $text);
+                $text = $parts[2] . '-' . $parts[1] . '-' . $parts[0];
+            }
+            // Format 2: DD/MM/YYYY (e.g., 25/04/2026)
+            elseif (preg_match('/^\d{2}\/\d{2}\/\d{4}$/', $text)) {
+                $parts = explode('/', $text);
+                $text = $parts[2] . '-' . $parts[1] . '-' . $parts[0];
+            }
+            // Format 3: DD.MM.YYYY (e.g., 25.04.2026)
+            elseif (preg_match('/^\d{2}\.\d{2}\.\d{4}$/', $text)) {
+                $parts = explode('.', $text);
+                $text = $parts[2] . '-' . $parts[1] . '-' . $parts[0];
+            }
+            
             if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $text)) {
                 $selected_date = $text;
                 $min_date = (new DateTime())->modify('+1 day');
@@ -433,8 +452,14 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
                     
                     $available_slots = [];
                     $booking_data = getBookingData($chat_id);
+                    $current_time = date('H:i:s');
                     
                     foreach ($time_slots as $slot) {
+                        // Skip past times if date is today
+                        if ($selected_date == date('Y-m-d') && $slot <= $current_time) {
+                            continue;
+                        }
+                        
                         $check_stmt = $pdo->prepare("
                             SELECT COUNT(*) FROM appointments 
                             WHERE doctor_id = ? AND appointment_date = ? AND appointment_time = ?
@@ -456,16 +481,16 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
                         updateBookingData($chat_id, 'available_slots', $available_slots);
                     } else {
                         $response = "❌ No available time slots for this date.\n\n";
-                        $response .= "Please select another date (YYYY-MM-DD):";
+                        $response .= "Please select another date in any format (YYYY-MM-DD, DD-MM-YYYY, or DD/MM/YYYY):";
                         setBookingStep($chat_id, 'select_date');
                     }
                     
                     sendMessage($chat_id, $response, $bot_token);
                 } else {
-                    sendMessage($chat_id, "❌ Please enter a future date (tomorrow or later) in format YYYY-MM-DD", $bot_token);
+                    sendMessage($chat_id, "❌ Please enter a future date (tomorrow or later).\nExamples: 2026-04-25 or 25-04-2026", $bot_token);
                 }
             } else {
-                sendMessage($chat_id, "❌ Invalid format. Please enter date as YYYY-MM-DD\nExample: " . date('Y-m-d', strtotime('+1 day')), $bot_token);
+                sendMessage($chat_id, "❌ Invalid date format.\nPlease use: YYYY-MM-DD, DD-MM-YYYY, or DD/MM/YYYY\nExample: 25-04-2026", $bot_token);
             }
             break;
             
@@ -476,36 +501,6 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
                     $index = (int)$text - 1;
                     if (isset($booking_data['available_slots'][$index])) {
                         $selected_time = $booking_data['available_slots'][$index];
-                        
-                        // Check if date is today and time is in the past
-                        if ($booking_data['appointment_date'] == date('Y-m-d')) {
-                            $current_time = date('H:i:s');
-                            if ($selected_time <= $current_time) {
-                                $response = "❌ Cannot book a time that has already passed.\n\n";
-                                $response .= "Please select a future time slot:\n";
-                                
-                                $future_slots = [];
-                                foreach ($booking_data['available_slots'] as $slot) {
-                                    if ($slot > $current_time) {
-                                        $future_slots[] = $slot;
-                                    }
-                                }
-                                
-                                if (count($future_slots) > 0) {
-                                    for ($i = 0; $i < count($future_slots); $i++) {
-                                        $response .= ($i + 1) . ". " . date('g:i A', strtotime($future_slots[$i])) . "\n";
-                                    }
-                                    updateBookingData($chat_id, 'available_slots', $future_slots);
-                                    $response .= "\nPlease enter the number of your preferred time slot.";
-                                } else {
-                                    $response .= "No available future time slots for today. Please select another date.";
-                                    setBookingStep($chat_id, 'select_date');
-                                }
-                                
-                                sendMessage($chat_id, $response, $bot_token);
-                                return;
-                            }
-                        }
                         
                         updateBookingData($chat_id, 'appointment_time', $selected_time);
                         setBookingStep($chat_id, 'confirm');
@@ -519,7 +514,7 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
                         $response .= "⏰ Time: " . date('g:i A', strtotime($booking_data['appointment_time'])) . "\n\n";
                         $response .= "✅ Type 'confirm' to book this appointment\n";
                         $response .= "❌ Type 'cancel' to cancel\n";
-                        $response .= "🔄 Type a new date (YYYY-MM-DD) to change the date";
+                        $response .= "🔄 Type a new date (DD-MM-YYYY) to change the date";
                         
                         sendMessage($chat_id, $response, $bot_token);
                     } else {
@@ -581,8 +576,15 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
                 resetUserBookingSession($chat_id);
                 sendMessage($chat_id, "❌ Appointment booking cancelled. Type /askappointment to start over.", $bot_token);
                 
-            } elseif (preg_match('/^\d{4}-\d{2}-\d{2}$/', $text)) {
-                $selected_date = $text;
+            } elseif (preg_match('/^\d{2}-\d{2}-\d{4}$/', $text) || preg_match('/^\d{4}-\d{2}-\d{2}$/', $text)) {
+                // Convert to YYYY-MM-DD if needed
+                if (preg_match('/^\d{2}-\d{2}-\d{4}$/', $text)) {
+                    $parts = explode('-', $text);
+                    $selected_date = $parts[2] . '-' . $parts[1] . '-' . $parts[0];
+                } else {
+                    $selected_date = $text;
+                }
+                
                 $min_date = (new DateTime())->modify('+1 day');
                 
                 if ($selected_date >= $min_date->format('Y-m-d')) {
@@ -597,8 +599,14 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
                     ];
                     $available_slots = [];
                     $booking_data = getBookingData($chat_id);
+                    $current_time = date('H:i:s');
                     
                     foreach ($time_slots as $slot) {
+                        // Skip past times if date is today
+                        if ($selected_date == date('Y-m-d') && $slot <= $current_time) {
+                            continue;
+                        }
+                        
                         $check_stmt = $pdo->prepare("
                             SELECT COUNT(*) FROM appointments 
                             WHERE doctor_id = ? AND appointment_date = ? AND appointment_time = ?
@@ -624,13 +632,13 @@ function handleBookingConversation($chat_id, $text, $pdo, $bot_token) {
                         updateBookingData($chat_id, 'available_slots', $available_slots);
                         sendMessage($chat_id, $response, $bot_token);
                     } else {
-                        sendMessage($chat_id, "❌ No available time slots for this date. Please select another date (YYYY-MM-DD):", $bot_token);
+                        sendMessage($chat_id, "❌ No available time slots for this date. Please select another date (DD-MM-YYYY):", $bot_token);
                     }
                 } else {
-                    sendMessage($chat_id, "❌ Please enter a future date (tomorrow or later) in format YYYY-MM-DD", $bot_token);
+                    sendMessage($chat_id, "❌ Please enter a future date (tomorrow or later) in format DD-MM-YYYY", $bot_token);
                 }
             } else {
-                sendMessage($chat_id, "❌ Please type 'confirm' to book, 'cancel' to cancel, or enter a new date (YYYY-MM-DD)", $bot_token);
+                sendMessage($chat_id, "❌ Please type 'confirm' to book, 'cancel' to cancel, or enter a new date (DD-MM-YYYY)", $bot_token);
             }
             break;
             
