@@ -1,9 +1,4 @@
 <?php
-// Force session to work properly - MUST be first
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
 require_once 'includes/config.php';
 
 $bot_token = '8330456846:AAFJFM3cy7rbKr5diPbcYi8QaIDDIhktpVU';
@@ -20,76 +15,72 @@ $chat_id = $message['chat']['id'];
 $text = trim($message['text'] ?? '');
 $first_name = $message['from']['first_name'] ?? '';
 
-// Debug logging
-file_put_contents('/tmp/bot_debug.log', date('Y-m-d H:i:s') . " - Chat ID: $chat_id - Text: $text\n", FILE_APPEND);
+// ========== FILE-BASED STORAGE (No sessions, no database table) ==========
+
+$booking_storage_dir = '/tmp/booking_data';
+if (!file_exists($booking_storage_dir)) {
+    mkdir($booking_storage_dir, 0777, true);
+}
+
+function getBookingStep($chat_id) {
+    global $booking_storage_dir;
+    $file = $booking_storage_dir . '/' . $chat_id . '.json';
+    if (file_exists($file)) {
+        $data = json_decode(file_get_contents($file), true);
+        return $data['step'] ?? null;
+    }
+    return null;
+}
+
+function getBookingData($chat_id) {
+    global $booking_storage_dir;
+    $file = $booking_storage_dir . '/' . $chat_id . '.json';
+    if (file_exists($file)) {
+        $data = json_decode(file_get_contents($file), true);
+        return $data['data'] ?? [];
+    }
+    return [];
+}
+
+function setBookingStep($chat_id, $step) {
+    global $booking_storage_dir;
+    $file = $booking_storage_dir . '/' . $chat_id . '.json';
+    $data = [
+        'step' => $step,
+        'data' => getBookingData($chat_id)
+    ];
+    file_put_contents($file, json_encode($data));
+}
+
+function setBookingData($chat_id, $data) {
+    global $booking_storage_dir;
+    $file = $booking_storage_dir . '/' . $chat_id . '.json';
+    $current_step = getBookingStep($chat_id);
+    $full_data = [
+        'step' => $current_step,
+        'data' => $data
+    ];
+    file_put_contents($file, json_encode($full_data));
+}
+
+function updateBookingData($chat_id, $key, $value) {
+    $data = getBookingData($chat_id);
+    $data[$key] = $value;
+    setBookingData($chat_id, $data);
+}
+
+function resetUserBookingSession($chat_id) {
+    global $booking_storage_dir;
+    $file = $booking_storage_dir . '/' . $chat_id . '.json';
+    if (file_exists($file)) {
+        unlink($file);
+    }
+}
 
 // Check if user is already linked
 $stmt = $pdo->prepare("SELECT * FROM patients WHERE telegram_chat_id = ? OR telegram_user_id = ?");
 $stmt->execute([$chat_id, $chat_id]);
 $patient = $stmt->fetch();
-
-// Session functions with proper error handling
-function getUserSessionKey($chat_id) {
-    return "booking_" . $chat_id;
-}
-
-function resetUserBookingSession($chat_id) {
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-    $key = getUserSessionKey($chat_id);
-    $_SESSION[$key] = ['step' => null, 'data' => []];
-    file_put_contents('/tmp/bot_debug.log', date('Y-m-d H:i:s') . " - Reset session for $chat_id\n", FILE_APPEND);
-}
-
-function getBookingStep($chat_id) {
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-    $key = getUserSessionKey($chat_id);
-    $step = $_SESSION[$key]['step'] ?? null;
-    file_put_contents('/tmp/bot_debug.log', date('Y-m-d H:i:s') . " - Get step for $chat_id: $step\n", FILE_APPEND);
-    return $step;
-}
-
-function getBookingData($chat_id) {
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-    $key = getUserSessionKey($chat_id);
-    return $_SESSION[$key]['data'] ?? [];
-}
-
-function setBookingStep($chat_id, $step) {
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-    $key = getUserSessionKey($chat_id);
-    $_SESSION[$key]['step'] = $step;
-    file_put_contents('/tmp/bot_debug.log', date('Y-m-d H:i:s') . " - Set step for $chat_id to: $step\n", FILE_APPEND);
-}
-
-function setBookingData($chat_id, $data) {
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-    $key = getUserSessionKey($chat_id);
-    $_SESSION[$key]['data'] = $data;
-}
-
-function updateBookingData($chat_id, $key, $value) {
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-    $user_key = getUserSessionKey($chat_id);
-    $_SESSION[$user_key]['data'][$key] = $value;
-}
-
-// Initialize session for this user if not exists
-$user_key = getUserSessionKey($chat_id);
-if (!isset($_SESSION[$user_key])) {
-    $_SESSION[$user_key] = ['step' => null, 'data' => []];
-}
 
 // ========== COMMAND HANDLERS ==========
 
@@ -104,7 +95,6 @@ if ($text === '/start') {
         $response .= "🔹 /queue - Check queue position\n";
         $response .= "🔹 /profile - View your profile\n";
         $response .= "🔹 /askappointment - Book a new appointment\n";
-        $response .= "🔹 /cancel - How to cancel an appointment\n";
         $response .= "🔹 /help - Show all commands\n\n";
         $response .= "_You will automatically receive appointment reminders._";
     } else {
@@ -120,7 +110,6 @@ if ($text === '/start') {
         $response .= "• /queue - Check your queue position\n";
         $response .= "• /profile - View your profile\n";
         $response .= "• /askappointment - Book a new appointment\n";
-        $response .= "• /cancel - How to cancel an appointment\n";
         $response .= "• /help - Show all commands\n\n";
         $response .= "_You will receive automatic reminders for your appointments._";
     }
@@ -139,7 +128,6 @@ if ($text === '/help') {
     $response .= "*/queue* - Check your queue position\n";
     $response .= "*/profile* - View your profile information\n";
     $response .= "*/askappointment* - Book a new appointment\n";
-    $response .= "*/cancel* - How to cancel an appointment\n";
     $response .= "*/help* - Show this message\n\n";
     $response .= "*Need help?* Visit our website: https://shifacenter.me";
     
@@ -189,11 +177,7 @@ if ($text === '/askappointment') {
 // ========== BOOKING CONVERSATION HANDLER ==========
 $current_step = getBookingStep($chat_id);
 
-// Debug: Log current step
-file_put_contents('/tmp/bot_debug.log', date('Y-m-d H:i:s') . " - Current step for $chat_id: '$current_step'\n", FILE_APPEND);
-
-if ($current_step !== null && $current_step !== '' && $text !== '/cancel' && $text !== '/start' && $text !== '/help' && $text !== '/askappointment') {
-    file_put_contents('/tmp/bot_debug.log', date('Y-m-d H:i:s') . " - Handling booking input: $text\n", FILE_APPEND);
+if ($current_step !== null && $current_step !== '' && $text !== '/start' && $text !== '/help' && $text !== '/askappointment') {
     handleBookingConversation($chat_id, $text, $pdo, $bot_token);
     exit();
 }
@@ -362,28 +346,6 @@ if ($text === '/queue') {
         $response .= "You don't have any appointments scheduled for today.\n\n";
         $response .= "Send /next to see your next appointment.";
     }
-    
-    sendMessage($chat_id, $response, $bot_token);
-    exit();
-}
-
-// /cancel - Cancel instruction
-if ($text === '/cancel') {
-    if (getBookingStep($chat_id) !== null) {
-        resetUserBookingSession($chat_id);
-        $response = "❌ *Booking Cancelled*\n\nYour appointment booking has been cancelled. Type /askappointment to start over.";
-        sendMessage($chat_id, $response, $bot_token);
-        exit();
-    }
-    
-    $response = "❌ *How to Cancel*\n\n";
-    $response .= "To cancel an appointment:\n\n";
-    $response .= "1️⃣ Login to your patient portal\n";
-    $response .= "2️⃣ Go to 'My Appointments'\n";
-    $response .= "3️⃣ Click 'Cancel' next to the appointment\n";
-    $response .= "4️⃣ Confirm cancellation\n\n";
-    $response .= "🔗 Portal: https://shifacenter.me/patient/dashboard.php\n\n";
-    $response .= "_Note: Please cancel at least 24 hours in advance._";
     
     sendMessage($chat_id, $response, $bot_token);
     exit();
