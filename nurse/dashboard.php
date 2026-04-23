@@ -1,6 +1,21 @@
 <?php
 require_once '../includes/config.php';
+// TEST: Direct query to see all appointments
+$test_all = $pdo->query("SELECT COUNT(*) FROM appointments")->fetchColumn();
+$test_tomorrow = $pdo->prepare("SELECT COUNT(*) FROM appointments WHERE appointment_date = DATE_ADD(CURDATE(), INTERVAL 1 DAY)");
+$test_tomorrow->execute();
+$tomorrow_count_test = $test_tomorrow->fetchColumn();
 
+echo "<!-- DEBUG: Total appointments in DB: $test_all -->";
+echo "<!-- DEBUG: Tomorrow appointments: $tomorrow_count_test -->";
+
+// Also show all appointments in HTML comment
+$all_debug = $pdo->query("SELECT appointment_id, patient_id, appointment_date, appointment_time, status FROM appointments ORDER BY appointment_id DESC LIMIT 10")->fetchAll();
+echo "<!-- Recent appointments: \n";
+foreach ($all_debug as $d) {
+    echo "ID: {$d['appointment_id']} | Patient: {$d['patient_id']} | {$d['appointment_date']} {$d['appointment_time']} | {$d['status']}\n";
+}
+echo "-->";
 session_start();
 
 // Check if nurse is logged in
