@@ -323,36 +323,36 @@ if (!$stats) {
                         <th><i class="fas fa-print"></i> Ticket</th>
                     </tr>
                 </thead>
-                <tbody>
-                    <?php if (count($appointments) > 0): ?>
-                        <?php foreach($appointments as $apt): ?>
-                            <tr>
-                                <td><i class="far fa-clock"></i> <?php echo date('g:i A', strtotime($apt['appointment_time'])); ?></td>
-                                <td><strong><?php echo htmlspecialchars($apt['patient_name']); ?></strong></td>
-                                <td><?php echo htmlspecialchars($apt['patient_phone']); ?></td>
-                                <td>Dr. <?php echo htmlspecialchars($apt['doctor_name']); ?></td>
-                                <td><span class="queue-number">#<?php echo $apt['queue_number']; ?></span></td>
-                                <td><span class="status-badge status-<?php echo $apt['status']; ?>"><i class="fas <?php echo $apt['status'] == 'scheduled' ? 'fa-clock' : ($apt['status'] == 'confirmed' ? 'fa-check-circle' : ($apt['status'] == 'completed' ? 'fa-flag-checkered' : ($apt['status'] == 'cancelled' ? 'fa-ban' : 'fa-user-slash'))); ?>"></i> <?php echo ucfirst($apt['status']); ?></span></td>
-                                <td><?php if (isset($apt['send_sms']) && $apt['send_sms'] == 1): ?><span class="sms-badge sms-yes"><i class="fas fa-check"></i> Yes</span><?php else: ?><span class="sms-badge sms-no"><i class="fas fa-times"></i> No</span><?php endif; ?></div>
-                                <td>
-                                    <?php if ($apt['status'] == 'scheduled'): ?>
-                                        <a href="?action=confirm&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" class="action-btn btn-confirm" onclick="return confirm('Confirm this appointment? SMS will be sent if patient requested.');"><i class="fas fa-check"></i> Confirm</a>
-                                        <a href="?action=cancel&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" class="action-btn btn-cancel" onclick="return confirm('Cancel this appointment?')"><i class="fas fa-times"></i> Cancel</a>
-                                        <a href="?action=noshow&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" class="action-btn btn-noshow" onclick="return confirm('Mark patient as no-show?')"><i class="fas fa-user-slash"></i> No Show</a>
-                                    <?php endif; ?>
-                                    <?php if ($apt['status'] == 'confirmed'): ?>
-                                        <a href="?action=complete&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" class="action-btn btn-complete" onclick="return confirm('Mark as completed?')"><i class="fas fa-check-double"></i> Complete</a>
-                                        <a href="?action=noshow&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" class="action-btn btn-noshow" onclick="return confirm('Mark patient as no-show?')"><i class="fas fa-user-slash"></i> No Show</a>
-                                        <a href="?action=cancel&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" class="action-btn btn-cancel" onclick="return confirm('Cancel this appointment?')"><i class="fas fa-times"></i> Cancel</a>
-                                    <?php endif; ?>
-                                    <a href="print_ticket.php?id=<?php echo $apt['appointment_id']; ?>" class="print-ticket" target="_blank"><i class="fas fa-print"></i> Print</a>
-                                 </div>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php else: ?>
-                        <tr class="empty-row"><td colspan="9"><i class="fas fa-calendar-times" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></i>No appointments found for this date.</td></tr>
+               <tbody>
+    <?php if (count($appointments) > 0): ?>
+        <?php foreach($appointments as $apt): ?>
+            <tr>
+                <td><i class="far fa-clock"></i> <?php echo date('g:i A', strtotime($apt['appointment_time'])); ?></td>
+                <td><strong><?php echo htmlspecialchars($apt['patient_name']); ?></strong></td>
+                <td><?php echo htmlspecialchars($apt['patient_phone']); ?></td>
+                <td>Dr. <?php echo htmlspecialchars($apt['doctor_name']); ?></td>
+                <td><span class="queue-number">#<?php echo $apt['queue_number']; ?></span></td>
+                <td><span class="status-badge status-<?php echo $apt['status']; ?>"><i class="fas <?php echo $apt['status'] == 'scheduled' ? 'fa-clock' : ($apt['status'] == 'confirmed' ? 'fa-check-circle' : ($apt['status'] == 'completed' ? 'fa-flag-checkered' : ($apt['status'] == 'cancelled' ? 'fa-ban' : 'fa-user-slash'))); ?>"></i> <?php echo ucfirst($apt['status']); ?></span></td>
+                <td><?php if (isset($apt['send_sms']) && $apt['send_sms'] == 1): ?><span class="sms-badge sms-yes"><i class="fas fa-check"></i> Yes</span><?php else: ?><span class="sms-badge sms-no"><i class="fas fa-times"></i> No</span><?php endif; ?></td>
+                <td>
+                    <?php if ($apt['status'] == 'scheduled'): ?>
+                        <a href="?action=confirm&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" class="action-btn btn-confirm" onclick="return confirm('Confirm this appointment? SMS will be sent if patient requested.');"><i class="fas fa-check"></i> Confirm</a>
+                        <a href="?action=cancel&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" class="action-btn btn-cancel" onclick="return confirm('Cancel this appointment?')"><i class="fas fa-times"></i> Cancel</a>
+                        <a href="?action=noshow&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" class="action-btn btn-noshow" onclick="return confirm('Mark patient as no-show?')"><i class="fas fa-user-slash"></i> No Show</a>
                     <?php endif; ?>
-                </tbody>
+                    <?php if ($apt['status'] == 'confirmed'): ?>
+                        <a href="?action=complete&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" class="action-btn btn-complete" onclick="return confirm('Mark as completed?')"><i class="fas fa-check-double"></i> Complete</a>
+                        <a href="?action=noshow&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" class="action-btn btn-noshow" onclick="return confirm('Mark patient as no-show?')"><i class="fas fa-user-slash"></i> No Show</a>
+                        <a href="?action=cancel&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>" class="action-btn btn-cancel" onclick="return confirm('Cancel this appointment?')"><i class="fas fa-times"></i> Cancel</a>
+                    <?php endif; ?>
+                    <a href="print_ticket.php?id=<?php echo $apt['appointment_id']; ?>" class="print-ticket" target="_blank"><i class="fas fa-print"></i> Print</a>
+                </td>
+            </tr>
+        <?php endforeach; ?>
+    <?php else: ?>
+        <tr class="empty-row"><td colspan="9"><i class="fas fa-calendar-times" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></i>No appointments found for this date.</td></tr>
+    <?php endif; ?>
+</tbody>
             </table>
         </div>
     </div>
