@@ -2,7 +2,7 @@
 error_reporting(E_ALL);
 ini_set('log_errors', 1);
 ini_set('error_log', '/tmp/telegram_bot.log');
-require_once 'config.php';  // CHANGED: removed 'includes/'
+require_once 'includes/config.php';  
 
 $bot_token = '8330456846:AAHSmyKZrvCL5yLqpHjynBMqC6tM2u9k6N8';
 
