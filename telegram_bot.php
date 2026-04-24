@@ -94,7 +94,7 @@ if (isset($update['message'])) {
             $response = "👋 *Welcome to Shifa Medical Center, $first_name!*\n\n";
             $response .= "To get started:\n";
             $response .= "1️⃣ Login: https://shifacenter.me/patient/dashboard.php\n";
-            $response .= "2️⃣ Click 'Link Telegram Account'\n\n";
+            $response .= "2️⃣ Click 'Telegram Bot'\n\n";
             $response .= "*Commands after linking:*\n";
             $response .= "• /askappointment - Book now\n";
             $response .= "• /appointments - View all\n";
