@@ -427,6 +427,9 @@ $appointments = $stmt->fetchAll();
         <div class="welcome-card">
             <h2><i class="fas fa-calendar-check" style="color: #4f46e5;"></i> My Appointments</h2>
             <div class="btn-group">
+    <a href="link_telegram.php" class="btn btn-telegram">
+        <i class="fab fa-telegram"></i> Link Telegram Account
+    </a>
                 <a href="https://t.me/Medical_Practice_Bot" target="_blank" class="btn btn-telegram">
                     <i class="fab fa-telegram"></i> Telegram Bot
                 </a>
