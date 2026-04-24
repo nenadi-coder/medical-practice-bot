@@ -1,45 +1,20 @@
-<?php
-// Minimal test bot
-$bot_token = '8330456846:AAFJFM3cy7rbKr5diPbcYi8QaIDDIhktpVU';
+👋 Welcome to Shifa Medical Center, [Name]!
 
-// Log all requests
-file_put_contents('/tmp/bot_test.log', date('Y-m-d H:i:s') . " - Request received\n", FILE_APPEND);
+I'm your health assistant. To get started:
 
-$content = file_get_contents('php://input');
-file_put_contents('/tmp/bot_test.log', "Input: " . $content . "\n", FILE_APPEND);
+1️⃣ Login to your patient portal
+2️⃣ Click 'Telegram Bot'
+3️⃣ Your account will be automatically linked
 
-$update = json_decode($content, true);
+🔗 Portal: https://shifacenter.me/patient/dashboard.php
 
-if (!$update || !isset($update['message'])) {
-    file_put_contents('/tmp/bot_test.log', "No valid message\n", FILE_APPEND);
-    http_response_code(200);
-    exit();
-}
+After linking, you can use these commands:
+• /appointments - View your appointments
+• /next - Your next upcoming appointment
+• /queue - Check your queue position
+• /profile - View your profile
+• /askappointment - Book a new appointment
+• /check - Test database connection
+• /help - Show all commands
 
-$chat_id = $update['message']['chat']['id'];
-$text = trim($update['message']['text'] ?? '');
-
-file_put_contents('/tmp/bot_test.log', "Chat ID: $chat_id, Text: $text\n", FILE_APPEND);
-
-// Send a simple response
-$url = "https://api.telegram.org/bot{$bot_token}/sendMessage";
-$data = [
-    'chat_id' => $chat_id,
-    'text' => "✅ Bot is working! You said: " . $text
-];
-
-$options = [
-    'http' => [
-        'header' => "Content-type: application/x-www-form-urlencoded\r\n",
-        'method' => 'POST',
-        'content' => http_build_query($data)
-    ]
-];
-
-$context = stream_context_create($options);
-$result = @file_get_contents($url, false, $context);
-
-file_put_contents('/tmp/bot_test.log', "Response sent\n", FILE_APPEND);
-
-http_response_code(200);
-?>
+Use /askappointment to book a new appointment.
