@@ -398,6 +398,9 @@ $appointments = $stmt->fetchAll();
             .container {
                 padding: 0 1rem;
             }
+            .btn-telegram {
+    background: linear-gradient(95deg, #0088cc, #00a6e6);
+}
         }
     </style>
 </head>
