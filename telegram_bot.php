@@ -26,7 +26,7 @@ if (isset($update['message'])) {
         $response .= "1. Login to your patient portal\n";
         $response .= "2. Click 'Link Telegram Account'\n";
         $response .= "3. Or use this link:\n";
-        $response .= "https://yourdomain.com/patient/link_telegram.php?chat_id=$chat_id\n\n";
+        $response .= "https://shifacenter.me/patient/link_telegram.php?chat_id=$chat_id\n\n";
         $response .= "_You will receive appointment reminders here once linked._";
         
         sendMessage($chat_id, $response, $bot_token);
