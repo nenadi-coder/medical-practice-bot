@@ -4,7 +4,7 @@ ini_set('log_errors', 1);
 ini_set('error_log', '/tmp/telegram_bot.log');
 require_once 'includes/config.php';
 
-$bot_token = '8330456846:AAFJFM3cy7rbKr5diPbcYi8QaIDDIhktpVU';
+$bot_token = '8330456846:AAHSmyKZrvCL5yLqpHjynBMqC6tM2u9k6N8';
 
 $content = file_get_contents('php://input');
 $update = json_decode($content, true);
