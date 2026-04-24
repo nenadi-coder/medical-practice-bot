@@ -1,4 +1,7 @@
 <?php
+error_reporting(E_ALL);
+ini_set('log_errors', 1);
+ini_set('error_log', '/tmp/telegram_bot.log');
 require_once 'includes/config.php';
 
 $bot_token = '8330456846:AAFJFM3cy7rbKr5diPbcYi8QaIDDIhktpVU';
@@ -10,7 +13,6 @@ if (!$update) {
     exit();
 }
 
-// Handle messages
 if (isset($update['message'])) {
     $message = $update['message'];
     $chat_id = $message['chat']['id'];
@@ -23,18 +25,16 @@ if (isset($update['message'])) {
     $patient = $stmt->fetch();
     
     // ========== AUTOMATIC LINKING ==========
-    // Handle /start 123 (patient ID from dashboard button)
+    // Handle /start 123 (when patient clicks button from dashboard)
     if (strpos($text, '/start ') === 0 && !$patient) {
         $patient_id = (int)trim(str_replace('/start', '', $text));
         
         if ($patient_id) {
-            // Check if patient exists
             $check_patient = $pdo->prepare("SELECT first_name, last_name FROM patients WHERE patient_id = ?");
             $check_patient->execute([$patient_id]);
             $patient_info = $check_patient->fetch();
             
             if ($patient_info) {
-                // Link the account automatically
                 $update_stmt = $pdo->prepare("UPDATE patients SET telegram_chat_id = ?, telegram_linked_at = NOW() WHERE patient_id = ?");
                 if ($update_stmt->execute([$chat_id, $patient_id])) {
                     $response = "✅ *Account Linked Successfully!*\n\n";
@@ -63,9 +63,7 @@ if (isset($update['message'])) {
         exit();
     }
     
-    // ========== REGULAR COMMANDS ==========
-    
-    // /start (no link parameter)
+    // /start (no parameter)
     if ($text == '/start') {
         if ($patient) {
             $response = "👋 *Welcome back, {$patient['first_name']}!*\n\n";
@@ -87,7 +85,7 @@ if (isset($update['message'])) {
         exit();
     }
     
-    // /status - Check if linked
+    // /status
     if ($text == '/status') {
         if ($patient) {
             $response = "✅ *Account Linked!*\n\n";
