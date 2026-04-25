@@ -213,7 +213,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $form['last_name'],
                     $form['email'],
                     $form['phone'],
-                    $password,
+                    password_hash($password, PASSWORD_BCRYPT),
                     $form['date_of_birth'],
                 ]);
 
