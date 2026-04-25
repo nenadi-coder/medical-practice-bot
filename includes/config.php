@@ -8,9 +8,7 @@ $username = 'doadmin';
 $password = 'AVNS_xAlHu7MeZoKMxKJ7Esn';
 
 try {
-    // DIGITALOCEAN SSL FIX: 
-    // This allows the connection to work without changing DB settings.
-    // Ensure 'ca-certificate.crt' is in the same folder as this file.
+    // This line tells PHP to use the file you just downloaded
     $options = [
         PDO::MYSQL_ATTR_SSL_CA => __DIR__ . '/ca-certificate.crt',
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -30,12 +28,12 @@ try {
 /* =====================================
    TELEGRAM LINKING PATCH
    ===================================== */
-// We use 'telegram_chat_id' to match your existing database column.
 if (isset($_GET['telegram_user_id']) && isset($_GET['patient_id'])) {
 
     $telegram_user_id = $_GET['telegram_user_id'];
     $patient_id = $_GET['patient_id'];
 
+    // Using your existing column name 'telegram_chat_id'
     $stmt = $pdo->prepare("
         UPDATE patients 
         SET telegram_chat_id = ? 
