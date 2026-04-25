@@ -19,7 +19,7 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute([$tomorrow]);
 $appointments = $stmt->fetchAll();
 
-$bot_token = '8330456846:AAFJFM3cy7rbKr5diPbcYi8QaIDDIhktpVU'; 
+$bot_token = TELEGRAM_BOT_TOKEN;
 
 foreach ($appointments as $apt) {
     $message = "🏥 *Appointment Reminder*\n\n";

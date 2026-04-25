@@ -15,17 +15,36 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     if (empty($email) || empty($password)) {
         $error = "Email and password are required";
     } else {
-        // SIMPLE VERSION - direct password comparison (preserved your original logic)
-        $sql = "SELECT patient_id, first_name, last_name, email, password FROM patients WHERE email = ? AND password = ?";
+        // Fetch patient by email only, then verify password in PHP
+        // (backward-compatible: supports both bcrypt hashes and legacy plaintext)
+        $sql  = "SELECT patient_id, first_name, last_name, email, password FROM patients WHERE email = ?";
         $stmt = $pdo->prepare($sql);
-        $stmt->execute([$email, $password]);
-        
-        if ($patient = $stmt->fetch()) {
+        $stmt->execute([$email]);
+
+        $patient      = $stmt->fetch();
+        $loginSuccess = false;
+
+        if ($patient) {
+            $stored = $patient['password'];
+
+            if (password_verify($password, $stored)) {
+                // Modern bcrypt hash — verified successfully.
+                $loginSuccess = true;
+            } elseif ($stored === $password) {
+                // Legacy plaintext match — migrate to bcrypt on the fly.
+                $newHash = password_hash($password, PASSWORD_BCRYPT);
+                $pdo->prepare("UPDATE patients SET password = ? WHERE patient_id = ?")
+                    ->execute([$newHash, $patient['patient_id']]);
+                $loginSuccess = true;
+            }
+        }
+
+        if ($loginSuccess) {
             // Login successful
-            $_SESSION['patient_id'] = $patient['patient_id'];
+            $_SESSION['patient_id']   = $patient['patient_id'];
             $_SESSION['patient_name'] = $patient['first_name'] . ' ' . $patient['last_name'];
-            $_SESSION['user_type'] = 'patient';
-            
+            $_SESSION['user_type']    = 'patient';
+
             header('Location: dashboard.php');
             exit();
         } else {

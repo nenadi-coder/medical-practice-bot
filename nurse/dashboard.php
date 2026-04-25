@@ -281,12 +281,12 @@ $stats = $stats_stmt->fetch() ?: ['total' => 0, 'scheduled' => 0, 'confirmed' =>
                                     <?php if (($apt['send_sms'] ?? 0) == 1): ?>
                                         <i class="fab fa-telegram telegram-icon" title="Telegram Booking"></i>
                                     <?php endif; ?>
-                                 </div>
-                                <td><?php echo htmlspecialchars($apt['patient_phone'] ?? 'N/A'); ?></div>
-                                <td>Dr. <?php echo htmlspecialchars($apt['doctor_name']); ?></div>
-                                <td><span class="queue-num">#<?php echo $apt['queue_number']; ?></span></div>
-                                <td><span class="status-badge status-<?php echo $apt['status']; ?>"><?php echo ucfirst($apt['status']); ?></span></div>
-                                <td><span class="sms-badge <?php echo ($apt['send_sms'] ?? 0) == 1 ? 'sms-yes' : 'sms-no'; ?>"><?php echo ($apt['send_sms'] ?? 0) == 1 ? 'Yes' : 'No'; ?></span></div>
+                                 </td>
+                                <td><?php echo htmlspecialchars($apt['patient_phone'] ?? 'N/A'); ?></td>
+                                <td>Dr. <?php echo htmlspecialchars($apt['doctor_name']); ?></td>
+                                <td><span class="queue-num">#<?php echo $apt['queue_number']; ?></span></td>
+                                <td><span class="status-badge status-<?php echo $apt['status']; ?>"><?php echo ucfirst($apt['status']); ?></span></td>
+                                <td><span class="sms-badge <?php echo ($apt['send_sms'] ?? 0) == 1 ? 'sms-yes' : 'sms-no'; ?>"><?php echo ($apt['send_sms'] ?? 0) == 1 ? 'Yes' : 'No'; ?></span></td>
                                 <td>
                                     <?php if ($apt['status'] == 'scheduled'): ?>
                                         <a href="?action=confirm&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo urlencode($filter); ?>" class="action-btn btn-confirm" onclick="return confirm('Confirm?')">✓ Confirm</a>
@@ -299,7 +299,7 @@ $stats = $stats_stmt->fetch() ?: ['total' => 0, 'scheduled' => 0, 'confirmed' =>
                                         <a href="?action=cancel&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo urlencode($filter); ?>" class="action-btn btn-cancel" onclick="return confirm('Cancel?')">✗ Cancel</a>
                                     <?php endif; ?>
                                     <a href="?print_id=<?php echo $apt['appointment_id']; ?>" class="action-btn btn-print" target="_blank">🖨 Print</a>
-                                 </div>
+                                 </td>
                             </tr>
                         <?php endforeach; ?>
                     <?php else: ?>

@@ -1,10 +1,22 @@
 <?php
 session_start();
 
-$host = 'db-mysql-nyc3-10499-do-user-36185384-0.e.db.ondigitalocean.com';
-$dbname = 'defaultdb';
-$username = 'doadmin';
-$password = 'AVNS_xAlHu7MeZoKMxKJ7Esn';
+// ---------------------------------------------------------------------------
+// Database connection — override any of these via environment variables so
+// that secrets are never hard-coded in source control.
+// ---------------------------------------------------------------------------
+$host     = getenv('DB_HOST')     ?: 'db-mysql-nyc3-10499-do-user-36185384-0.e.db.ondigitalocean.com';
+$dbname   = getenv('DB_NAME')     ?: 'defaultdb';
+$username = getenv('DB_USERNAME') ?: 'doadmin';
+$password = getenv('DB_PASSWORD') ?: 'AVNS_xAlHu7MeZoKMxKJ7Esn';
+
+// ---------------------------------------------------------------------------
+// Telegram Bot Token
+// Set the TELEGRAM_BOT_TOKEN environment variable on your server.
+// Example (Linux/Apache):  export TELEGRAM_BOT_TOKEN="your_token_here"
+// Example (.env file):     TELEGRAM_BOT_TOKEN=your_token_here
+// ---------------------------------------------------------------------------
+define('TELEGRAM_BOT_TOKEN', getenv('TELEGRAM_BOT_TOKEN') ?: '');
 
 try {
     $pdo = new PDO(
