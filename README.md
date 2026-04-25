@@ -54,11 +54,40 @@ https://api.telegram.org/bot<YOUR_TOKEN>/setWebhook?url=https://yourdomain.com/t
 
 ### 4. Run the DB migration
 
-Before deploying, run the migration to create the session state table:
+#### Option A — direct database client
+Connect to your database and run:
 ```sql
 SOURCE migrations/001_telegram_sessions.sql;
 ```
-Or copy-paste the file contents into your database client.
+Or copy-paste the file contents into your database client (phpMyAdmin, TablePlus, etc.).
+
+#### Option B — migration runner endpoint (DigitalOcean Managed DB workaround)
+
+If you cannot connect to the database directly (e.g. port 25060 is blocked by your ISP),
+use the included secret-protected endpoint instead:
+
+1. **Set `MIGRATION_KEY`** in DigitalOcean App Platform  
+   App → **Settings → App-Level Environment Variables** → add:
+   ```
+   MIGRATION_KEY = <a long random string of your choice>
+   ```
+   Mark it as **Encrypted/Secret**.  
+   ⚠️ **Always set this variable before deploying.** Without it the endpoint falls back to a weak built-in default that is easy to guess.
+
+2. **Deploy** — push (or force-redeploy) so the new file `admin/run_migrations.php` is live.
+
+3. **Visit the endpoint once** in your browser (replace the key with the value you set):
+   ```
+   https://shifacenter.me/admin/run_migrations.php?key=<MIGRATION_KEY>
+   ```
+   You should see:
+   ```
+   OK: migration applied successfully.
+   ```
+
+4. **Remove or lock the file** after the migration succeeds — either:
+   - Delete `admin/run_migrations.php` from the repo and redeploy, **or**
+   - Change `MIGRATION_KEY` to a new secret value so the old URL no longer works.
 
 ---
 
@@ -74,6 +103,7 @@ The DB connection parameters can also be set via environment variables (defaults
 | `DB_PASSWORD` | *(stored in config)* |
 | `TELEGRAM_BOT_TOKEN` | *(must be set — no default)* |
 | `DEFAULT_DOCTOR_ID` | `1` (doctor assigned to Telegram bookings) |
+| `MIGRATION_KEY` | *(weak built-in default — always set a long random value in production)* |
 
 ---
 
