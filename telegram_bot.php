@@ -1,4 +1,4 @@
-fix this <?php
+<?php
 require_once 'includes/config.php';
 
 $bot_token = '8330456846:AAHSmyKZrvCL5yLqpHjynBMqC6tM2u9k6N8';
