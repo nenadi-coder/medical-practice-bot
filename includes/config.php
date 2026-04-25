@@ -8,7 +8,7 @@ session_start();
 $host     = getenv('DB_HOST')     ?: 'db-mysql-nyc3-10499-do-user-36185384-0.e.db.ondigitalocean.com';
 $dbname   = getenv('DB_NAME')     ?: 'defaultdb';
 $username = getenv('DB_USERNAME') ?: 'doadmin';
-$password = getenv('DB_PASSWORD') ?: 'AVNS_xAlHu7MeZoKMxKJ7Esn';
+$password = getenv('DB_PASSWORD') ?: 'AVNS_bO2G7PtVCtrA6uXCiYp';
 
 // ---------------------------------------------------------------------------
 // Telegram Bot Token
