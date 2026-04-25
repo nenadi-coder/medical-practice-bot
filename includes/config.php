@@ -16,7 +16,7 @@ $password = getenv('DB_PASSWORD') ?: 'AVNS_bO2G7PtVCtrA6uXCiYp';
 // Example (Linux/Apache):  export TELEGRAM_BOT_TOKEN="your_token_here"
 // Example (.env file):     TELEGRAM_BOT_TOKEN=your_token_here
 // ---------------------------------------------------------------------------
-define('TELEGRAM_BOT_TOKEN', getenv('TELEGRAM_BOT_TOKEN') ?: '');
+define('TELEGRAM_BOT_TOKEN', getenv('TELEGRAM_BOT_TOKEN') ?: '8330456846:AAHSmyKZrvCL5yLqpHjynBMqC6tM2u9k6N8');
 
 try {
     $pdo = new PDO(
