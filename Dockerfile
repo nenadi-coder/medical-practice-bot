@@ -1,20 +1,17 @@
-# Use the official PHP 8.2 CLI image
-FROM php:8.2-cli
+# Use Apache so the web server stays alive
+FROM php:8.2-apache
 
-# Install system dependencies and PHP extensions
+# Install database extensions
 RUN apt-get update && apt-get install -y \
-    git \
-    curl \
     libzip-dev \
     unzip \
     && docker-php-ext-install pdo_mysql mysqli zip \
-    && apt-get clean
+    && a2enmod rewrite
 
-# Set working directory
-WORKDIR /var/www/html
+# Copy your files to the web directory
+COPY . /var/www/html/
 
-# Copy all application files
-COPY . .
+# Ensure permissions are correct for the web server
+RUN chown -R www-data:www-data /var/www/html
 
-# Run the reminder script
-CMD ["php", "send_reminders.php"]
+EXPOSE 80
