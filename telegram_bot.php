@@ -1,314 +1,290 @@
-<?php
+fix this <?php
 require_once 'includes/config.php';
-// Database configuration
-define('DB_HOST', 'db-mysql-nyc3-10499-do-user-36185384-0.e.db.ondigitalocean.com');
-define('DB_PORT', '25060');
-define('DB_NAME', 'if0_41555171_medical_practice');
-define('DB_USER', 'doadmin');
-define('DB_PASS', 'AVNS_xAlHu7MeZoKMxKJ7Esn'); 
-define('DB_SSL_CA', __DIR__ . '/ca-certificate.crt');
 
-// Telegram Bot Token
-define('BOT_TOKEN', '8330456846:AAHSmyKZrvCL5yLqpHjynBMqC6tM2u9k6N8'); // CHANGE THIS
+$bot_token = '8330456846:AAHSmyKZrvCL5yLqpHjynBMqC6tM2u9k6N8';
 
-// Webhook secret token
-define('SECRET_TOKEN', 'nadia'); // CHANGE THIS
+$content = file_get_contents('php://input');
+$update = json_decode($content, true);
 
-
-try {
-    $pdo = new PDO(
-        "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME . ";charset=utf8mb4",
-        DB_USER,
-        DB_PASS,
-        [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::MYSQL_ATTR_SSL_CA => DB_SSL_CA,
-            PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => true
-        ]
-    );
-} catch (PDOException $e) {
-    error_log("Database connection failed: " . $e->getMessage());
-    http_response_code(500);
+if (!$update || !isset($update['message'])) {
     exit();
 }
 
-// Verify webhook security
-$headers = getallheaders();
-if (!isset($headers['X-Telegram-Bot-Api-Secret-Token']) || $headers['X-Telegram-Bot-Api-Secret-Token'] !== SECRET_TOKEN) {
-    http_response_code(403);
-    exit();
-}
+$message = $update['message'];
+$chat_id = $message['chat']['id'];
+$text = trim($message['text'] ?? '');
+$first_name = $message['from']['first_name'] ?? '';
 
-// Get update
-$input = file_get_contents('php://input');
-if (empty($input)) {
-    http_response_code(200);
-    exit();
-}
+// Check if user is already linked
+$stmt = $pdo->prepare("SELECT * FROM patients WHERE telegram_chat_id = ? OR telegram_user_id = ?");
+$stmt->execute([$chat_id, $chat_id]);
+$patient = $stmt->fetch();
 
-$update = json_decode($input, true);
-if (!$update) {
-    http_response_code(200);
-    exit();
-}
+// ========== COMMAND HANDLERS ==========
 
-// Process update
-try {
-    processUpdate($update, $pdo);
-} catch (Exception $e) {
-    error_log("Error: " . $e->getMessage());
-}
-
-http_response_code(200);
-exit();
-
-function processUpdate($update, $pdo) {
-    if (!isset($update['message'])) return;
-    
-    $message = $update['message'];
-    $chat_id = $message['chat']['id'];
-    $text = trim($message['text'] ?? '');
-    $user_id = $message['from']['id'];
-    $username = $message['from']['username'] ?? '';
-    
-    // Check if user is already linked
-    $stmt = $pdo->prepare("
-        SELECT patient_id, first_name, last_name, email 
-        FROM patients 
-        WHERE telegram_chat_id = ? OR telegram_user_id = ? OR telegram_id = ?
-    ");
-    $stmt->execute([$chat_id, $chat_id, $chat_id]);
-    $linked_patient = $stmt->fetch();
-    
-    // If already linked, handle commands normally
-    if ($linked_patient) {
-        // Handle commands
-        if (strpos($text, '/') === 0) {
-            switch ($text) {
-                case '/start':
-                    sendWelcomeLinked($chat_id, $linked_patient['first_name']);
-                    break;
-                case '/help':
-                    sendHelp($chat_id);
-                    break;
-                case '/status':
-                    sendStatus($chat_id, $pdo);
-                    break;
-                case '/next':
-                    sendNextAppointment($chat_id, $pdo);
-                    break;
-                default:
-                    sendMessage($chat_id, "❌ Unknown command. Type /help for options.");
-            }
-        }
-        return;
-    }
-    
-    // Check if user is in the process of linking (waiting for email)
-    session_start();
-    $waiting_for_email = $_SESSION['waiting_email_' . $chat_id] ?? false;
-    
-    if ($waiting_for_email) {
-        // User just sent their email - link them!
-        unset($_SESSION['waiting_email_' . $chat_id]);
-        handleEmailLinking($chat_id, $text, $user_id, $username, $pdo);
-        return;
-    }
-    
-    // Handle commands for unlinked users
-    if (strpos($text, '/') === 0) {
-        switch ($text) {
-            case '/start':
-                askForEmail($chat_id);
-                break;
-            case '/help':
-                sendHelp($chat_id);
-                break;
-            default:
-                sendMessage($chat_id, "❌ Please type /start to link your account.");
-        }
-    }
-}
-
-function askForEmail($chat_id) {
-    session_start();
-    $_SESSION['waiting_email_' . $chat_id] = true;
-    
-    $response = "🏥 *Welcome to Shifa Medical Center Bot!*\n\n";
-    $response .= "To get started, please enter the email address you used when registering at our clinic.\n\n";
-    $response .= "📧 *Example:* john.doe@email.com\n\n";
-    $response .= "_Don't worry, this is a one-time setup!_";
-    
-    sendMessage($chat_id, $response);
-}
-
-function handleEmailLinking($chat_id, $email, $user_id, $username, $pdo) {
-    // Validate email format
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        sendMessage($chat_id, "❌ *Invalid Email Format*\n\nPlease enter a valid email address.\n\nType /start to try again.");
-        return;
-    }
-    
-    // Search for patient with this email
-    $stmt = $pdo->prepare("
-        SELECT patient_id, first_name, last_name, email, phone 
-        FROM patients 
-        WHERE email = ?
-    ");
-    $stmt->execute([$email]);
-    $patient = $stmt->fetch();
-    
-    if (!$patient) {
-        sendMessage($chat_id, "❌ *Email Not Found*\n\nWe couldn't find '{$email}' in our records.\n\nPlease use the email you provided when registering at the clinic.\n\nType /start to try again.");
-        return;
-    }
-    
-    // Email found! Link the account automatically
-    $stmt = $pdo->prepare("
-        UPDATE patients 
-        SET telegram_chat_id = ?, 
-            telegram_user_id = ?, 
-            telegram_username = ?,
-            telegram_id = ?,
-            telegram_linked_at = NOW()
-        WHERE patient_id = ?
-    ");
-    $stmt->execute([$chat_id, $user_id, $username, $chat_id, $patient['patient_id']]);
-    
-    // Send welcome message
-    sendWelcomeNew($chat_id, $patient['first_name'], $patient['last_name']);
-}
-
-function sendWelcomeNew($chat_id, $first_name, $last_name) {
-    $response = "✅ *Account Linked Successfully!*\n\n";
-    $response .= "Welcome back, *{$first_name} {$last_name}*! 🎉\n\n";
-    $response .= "Your Telegram account is now connected to your patient record.\n\n";
-    $response .= "📱 *What you can do:*\n";
-    $response .= "🔹 /next - View your next appointment\n";
-    $response .= "🔹 /status - Check your account status\n";
-    $response .= "🔹 /help - See all commands\n\n";
-    $response .= "_You'll also receive automatic appointment reminders here!_";
-    
-    sendMessage($chat_id, $response);
-}
-
-function sendWelcomeLinked($chat_id, $first_name) {
-    $response = "🏥 *Welcome back to Shifa Medical Center!*\n\n";
-    $response .= "Hello *{$first_name}*! 👋\n\n";
-    $response .= "📱 *Quick Commands:*\n";
-    $response .= "/next - Your next appointment\n";
-    $response .= "/status - Account information\n";
-    $response .= "/help - All commands";
-    
-    sendMessage($chat_id, $response);
-}
-
-function sendHelp($chat_id) {
-    $response = "🤖 *Shifa Medical Center Bot*\n\n";
-    $response .= "*Commands:*\n";
-    $response .= "/start - Connect your account\n";
-    $response .= "/status - View your account info\n";
-    $response .= "/next - See your next appointment\n";
-    $response .= "/help - Show this menu\n\n";
-    $response .= "*Need help?* Call our reception at (555) 123-4567";
-    
-    sendMessage($chat_id, $response);
-}
-
-function sendStatus($chat_id, $pdo) {
-    $stmt = $pdo->prepare("
-        SELECT first_name, last_name, email, phone, telegram_linked_at
-        FROM patients 
-        WHERE telegram_chat_id = ? OR telegram_user_id = ? OR telegram_id = ?
-    ");
-    $stmt->execute([$chat_id, $chat_id, $chat_id]);
-    $patient = $stmt->fetch();
-    
+// /start - Welcome message
+if ($text === '/start') {
     if ($patient) {
-        $response = "👤 *Your Account Information*\n\n";
-        $response .= "📛 *Name:* {$patient['first_name']} {$patient['last_name']}\n";
-        $response .= "📧 *Email:* {$patient['email']}\n";
-        $response .= "📞 *Phone:* " . ($patient['phone'] ?? 'Not provided') . "\n";
-        $response .= "🔗 *Linked:* " . date('M d, Y', strtotime($patient['telegram_linked_at'])) . "\n\n";
-        $response .= "✅ Your account is active and ready!";
+        // Already linked
+        $response = "👋 *Welcome back, {$patient['first_name']}!*\n\n";
+        $response .= "Your account is already linked. Here's what you can do:\n\n";
+        $response .= "📋 *Commands:*\n";
+        $response .= "🔹 /appointments - View your appointments\n";
+        $response .= "🔹 /next - Your next appointment\n";
+        $response .= "🔹 /queue - Check queue position\n";
+        $response .= "🔹 /profile - View your profile\n";
+        $response .= "🔹 /help - Show all commands\n\n";
+        $response .= "_You will automatically receive appointment reminders._";
     } else {
-        $response = "❌ *Account Not Linked*\n\nType /start to connect your account.";
+        // Not linked - tell them to use website
+        $response = "👋 *Welcome to Shifa Medical Center, $first_name!*\n\n";
+        $response .= "I'm your health assistant. To get started:\n\n";
+        $response .= "1️⃣ *Login to your patient portal*\n";
+        $response .= "2️⃣ *Click 'Telegram Bot'*\n";
+        $response .= "3️⃣ *Your account will be automatically linked*\n\n";
+        $response .= "🔗 Portal: https://shifacenter.me/patient/dashboard.php\n\n";
+        $response .= "*After linking, you can use these commands:*\n";
+        $response .= "• /appointments - View your appointments\n";
+        $response .= "• /next - Your next appointment\n";
+        $response .= "• /queue - Check your queue position\n";
+        $response .= "• /profile - View your profile\n";
+        $response .= "• /help - Show all commands\n\n";
+        $response .= "_You will receive automatic reminders for your appointments._";
     }
     
-    sendMessage($chat_id, $response);
+    sendMessage($chat_id, $response, $bot_token);
+    exit();
 }
 
-function sendNextAppointment($chat_id, $pdo) {
-    // Get patient
-    $stmt = $pdo->prepare("
-        SELECT patient_id, first_name 
-        FROM patients 
-        WHERE telegram_chat_id = ? OR telegram_user_id = ? OR telegram_id = ?
-    ");
-    $stmt->execute([$chat_id, $chat_id, $chat_id]);
-    $patient = $stmt->fetch();
+// /help - Show all commands
+if ($text === '/help') {
+    $response = "🤖 *Available Commands:*\n\n";
+    $response .= "*/start* - Welcome message\n";
+    $response .= "*/appointments* - View all your appointments\n";
+    $response .= "*/next* - Show your next appointment\n";
+    $response .= "*/queue* - Check your queue position\n";
+    $response .= "*/profile* - View your profile information\n";
+    $response .= "*/reschedule* - How to reschedule\n";
+    $response .= "*/cancel* - How to cancel\n";
+    $response .= "*/help* - Show this message\n\n";
+    $response .= "*Need help?* Visit our website: https://shifacenter.me";
     
+    sendMessage($chat_id, $response, $bot_token);
+    exit();
+}
+
+// /profile - View user profile
+if ($text === '/profile') {
     if (!$patient) {
-        sendMessage($chat_id, "❌ Please link your account first. Type /start");
-        return;
+        $response = "❌ *Account Not Linked*\n\n";
+        $response .= "Please login to our website and click 'Link Telegram Account' first.\n\n";
+        $response .= "Portal: https://shifacenter.me/patient/dashboard.php";
+        sendMessage($chat_id, $response, $bot_token);
+        exit();
     }
     
-    // Get next appointment
-    $stmt = $pdo->prepare("
-        SELECT 
-            a.appointment_date,
-            a.appointment_time,
-            a.queue_number,
-            a.status,
-            CONCAT(d.first_name, ' ', d.last_name) as doctor_name,
-            d.specialization
+    $response = "👤 *Your Profile*\n\n";
+    $response .= "*Name:* {$patient['first_name']} {$patient['last_name']}\n";
+    $response .= "*Email:* {$patient['email']}\n";
+    $response .= "*Phone:* " . ($patient['phone'] ?? 'Not set') . "\n";
+    $response .= "*Member since:* " . date('F j, Y', strtotime($patient['created_at'])) . "\n\n";
+    $response .= "_To update your profile, please visit our website._";
+    
+    sendMessage($chat_id, $response, $bot_token);
+    exit();
+}
+
+// /next - Show next appointment
+if ($text === '/next') {
+    if (!$patient) {
+        $response = "❌ *Account Not Linked*\n\n";
+        $response .= "Please login to our website and click 'Link Telegram Account' first.\n\n";
+        $response .= "Portal: https://shifacenter.me/patient/dashboard.php";
+        sendMessage($chat_id, $response, $bot_token);
+        exit();
+    }
+    
+    $apt_stmt = $pdo->prepare("
+        SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
         FROM appointments a
         JOIN doctors d ON a.doctor_id = d.doctor_id
-        WHERE a.patient_id = ? 
-            AND a.appointment_date >= CURDATE() 
-            AND a.status NOT IN ('cancelled')
+        WHERE a.patient_id = ? AND a.appointment_date >= CURDATE() 
+        AND a.status IN ('scheduled', 'confirmed')
         ORDER BY a.appointment_date ASC, a.appointment_time ASC
         LIMIT 1
     ");
-    $stmt->execute([$patient['patient_id']]);
-    $apt = $stmt->fetch();
+    $apt_stmt->execute([$patient['patient_id']]);
+    $appointment = $apt_stmt->fetch();
     
-    if ($apt) {
-        $status_emoji = [
-            'scheduled' => '📅',
-            'confirmed' => '✅',
-            'completed' => '✔️'
-        ];
-        $emoji = $status_emoji[$apt['status']] ?? '📅';
-        
-        $response = "$emoji *Your Next Appointment*\n\n";
-        $response .= "📆 *Date:* " . date('l, F j, Y', strtotime($apt['appointment_date'])) . "\n";
-        $response .= "⏰ *Time:* " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
-        $response .= "👨‍⚕️ *Doctor:* Dr. {$apt['doctor_name']}\n";
-        
-        if ($apt['specialization']) {
-            $response .= "🏥 *Department:* {$apt['specialization']}\n";
-        }
-        if ($apt['queue_number']) {
-            $response .= "🔢 *Queue #:* {$apt['queue_number']}\n";
-        }
-        
-        $response .= "\n⚠️ Please arrive 15 minutes early.";
-        
-        if ($apt['appointment_date'] == date('Y-m-d')) {
-            $response .= "\n\n🔔 *TODAY!* Your appointment is today!";
-        }
+    if ($appointment) {
+        $response = "📅 *Your Next Appointment*\n\n";
+        $response .= "📆 Date: " . date('l, F j, Y', strtotime($appointment['appointment_date'])) . "\n";
+        $response .= "⏰ Time: " . date('g:i A', strtotime($appointment['appointment_time'])) . "\n";
+        $response .= "👨‍⚕️ Doctor: Dr. {$appointment['doctor_name']}\n";
+        $response .= "🎫 Queue #: {$appointment['queue_number']}\n";
+        $response .= "📌 Status: " . ucfirst($appointment['status']) . "\n\n";
+        $response .= "_Please arrive 10 minutes early!_";
     } else {
-        $response = "📅 *No Upcoming Appointments*\n\nYou have no upcoming appointments scheduled.\n\n📞 Call the clinic to book an appointment.";
+        $response = "📅 *No Upcoming Appointments*\n\n";
+        $response .= "You have no upcoming appointments scheduled.\n\n";
+        $response .= "Book one on our website: https://shifacenter.me/patient/book_appointment.php";
     }
     
-    sendMessage($chat_id, $response);
+    sendMessage($chat_id, $response, $bot_token);
+    exit();
 }
 
-function sendMessage($chat_id, $message) {
-    $url = "https://api.telegram.org/bot" . BOT_TOKEN . "/sendMessage";
+// /appointments - Show all appointments
+if ($text === '/appointments') {
+    if (!$patient) {
+        $response = "❌ *Account Not Linked*\n\n";
+        $response .= "Please login to our website and click 'Link Telegram Account' first.\n\n";
+        $response .= "Portal: https://shifacenter.me/patient/dashboard.php";
+        sendMessage($chat_id, $response, $bot_token);
+        exit();
+    }
     
+    $apt_stmt = $pdo->prepare("
+        SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
+        FROM appointments a
+        JOIN doctors d ON a.doctor_id = d.doctor_id
+        WHERE a.patient_id = ? 
+        ORDER BY a.appointment_date DESC, a.appointment_time DESC
+        LIMIT 10
+    ");
+    $apt_stmt->execute([$patient['patient_id']]);
+    $appointments = $apt_stmt->fetchAll();
+    
+    if (count($appointments) > 0) {
+        $response = "📋 *Your Appointments*\n\n";
+        foreach ($appointments as $apt) {
+            $status_emoji = match($apt['status']) {
+                'scheduled' => '⏳',
+                'confirmed' => '✅',
+                'completed' => '✔️',
+                'cancelled' => '❌',
+                default => '📌'
+            };
+            $response .= "{$status_emoji} *" . date('M j, Y', strtotime($apt['appointment_date'])) . "* - " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
+            $response .= "   Dr. {$apt['doctor_name']} | Queue #{$apt['queue_number']}\n";
+            $response .= "   Status: " . ucfirst($apt['status']) . "\n\n";
+        }
+        $response .= "_To book a new appointment, visit our website._";
+    } else {
+        $response = "📋 *No Appointments Found*\n\n";
+        $response .= "You don't have any appointments yet.\n\n";
+        $response .= "Book one: https://shifacenter.me/patient/book_appointment.php";
+    }
+    
+    sendMessage($chat_id, $response, $bot_token);
+    exit();
+}
+
+// /queue - Check queue position
+if ($text === '/queue') {
+    if (!$patient) {
+        $response = "❌ *Account Not Linked*\n\n";
+        $response .= "Please login to our website and click 'Link Telegram Account' first.\n\n";
+        $response .= "Portal: https://shifacenter.me/patient/dashboard.php";
+        sendMessage($chat_id, $response, $bot_token);
+        exit();
+    }
+    
+    // Get today's upcoming appointment
+    $apt_stmt = $pdo->prepare("
+        SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
+        FROM appointments a
+        JOIN doctors d ON a.doctor_id = d.doctor_id
+        WHERE a.patient_id = ? AND a.appointment_date = CURDATE() 
+        AND a.status IN ('scheduled', 'confirmed')
+        ORDER BY a.appointment_time ASC
+        LIMIT 1
+    ");
+    $apt_stmt->execute([$patient['patient_id']]);
+    $appointment = $apt_stmt->fetch();
+    
+    if ($appointment) {
+        // Count people ahead
+        $queue_stmt = $pdo->prepare("
+            SELECT COUNT(*) as ahead FROM appointments 
+            WHERE appointment_date = CURDATE() 
+            AND queue_number < ? 
+            AND status IN ('scheduled', 'confirmed')
+        ");
+        $queue_stmt->execute([$appointment['queue_number']]);
+        $ahead = $queue_stmt->fetchColumn();
+        
+        $total_stmt = $pdo->prepare("
+            SELECT COUNT(*) as total FROM appointments 
+            WHERE appointment_date = CURDATE() 
+            AND status IN ('scheduled', 'confirmed')
+        ");
+        $total_stmt->execute();
+        $total = $total_stmt->fetchColumn();
+        
+        $response = "🎫 *Queue Information*\n\n";
+        $response .= "👨‍⚕️ Doctor: Dr. {$appointment['doctor_name']}\n";
+        $response .= "🎟️ Your Queue #: *{$appointment['queue_number']}*\n";
+        $response .= "📊 Position: " . ($ahead + 1) . " of $total waiting\n";
+        $response .= "👥 People ahead: $ahead\n\n";
+        
+        if ($ahead == 0) {
+            $response .= "🔔 *You're NEXT!* Please be ready when called.\n";
+        } else {
+            $response .= "⏱️ Estimated wait: ~" . ($ahead * 15) . " minutes\n";
+            $response .= "_Based on 15 minutes per patient._\n";
+        }
+    } else {
+        $response = "🎫 *No Active Queue*\n\n";
+        $response .= "You don't have any appointments scheduled for today.\n\n";
+        $response .= "Send /next to see your next appointment.";
+    }
+    
+    sendMessage($chat_id, $response, $bot_token);
+    exit();
+}
+
+// /reschedule - Reschedule instruction
+if ($text === '/reschedule') {
+    $response = "🔄 *How to Reschedule*\n\n";
+    $response .= "To reschedule an appointment:\n\n";
+    $response .= "1️⃣ Login to your patient portal\n";
+    $response .= "2️⃣ Go to 'My Appointments'\n";
+    $response .= "3️⃣ Click 'Reschedule' next to the appointment\n";
+    $response .= "4️⃣ Choose a new date and time\n\n";
+    $response .= "🔗 Portal: https://shifacenter.me/patient/dashboard.php\n\n";
+    $response .= "_Note: Appointments can only be rescheduled online._";
+    
+    sendMessage($chat_id, $response, $bot_token);
+    exit();
+}
+
+// /cancel - Cancel instruction
+if ($text === '/cancel') {
+    $response = "❌ *How to Cancel*\n\n";
+    $response .= "To cancel an appointment:\n\n";
+    $response .= "1️⃣ Login to your patient portal\n";
+    $response .= "2️⃣ Go to 'My Appointments'\n";
+    $response .= "3️⃣ Click 'Cancel' next to the appointment\n";
+    $response .= "4️⃣ Confirm cancellation\n\n";
+    $response .= "🔗 Portal: https://shifacenter.me/patient/dashboard.php\n\n";
+    $response .= "_Note: Please cancel at least 24 hours in advance._";
+    
+    sendMessage($chat_id, $response, $bot_token);
+    exit();
+}
+
+// ========== DEFAULT: Unknown command ==========
+$response = "🤖 *I didn't understand that.*\n\n";
+$response .= "Send /help to see all available commands.\n\n";
+$response .= "Or visit our website: https://shifacenter.me";
+
+sendMessage($chat_id, $response, $bot_token);
+
+// ========== HELPER FUNCTIONS ==========
+
+function sendMessage($chat_id, $message, $bot_token) {
+    $url = "https://api.telegram.org/bot{$bot_token}/sendMessage";
     $data = [
         'chat_id' => $chat_id,
         'text' => $message,
@@ -317,14 +293,40 @@ function sendMessage($chat_id, $message) {
     
     $options = [
         'http' => [
-            'header' => "Content-Type: application/json\r\n",
+            'header' => "Content-type: application/x-www-form-urlencoded\r\n",
             'method' => 'POST',
-            'content' => json_encode($data),
-            'timeout' => 5
+            'content' => http_build_query($data)
         ]
     ];
     
     $context = stream_context_create($options);
-    @file_get_contents($url, false, $context);
+    file_get_contents($url, false, $context);
+}
+
+function sendChatAction($chat_id, $action, $bot_token) {
+    $url = "https://api.telegram.org/bot{$bot_token}/sendChatAction";
+    $data = ['chat_id' => $chat_id, 'action' => $action];
+    
+    $options = [
+        'http' => [
+            'header' => "Content-type: application/x-www-form-urlencoded\r\n",
+            'method' => 'POST',
+            'content' => http_build_query($data)
+        ]
+    ];
+    
+    $context = stream_context_create($options);
+    file_get_contents($url, false, $context);
 }
 ?>
+and add this > Adel:
+Okay, idha ta9dro zido /askappointment
+
+> Adel:
+Win ydemander appointment
+
+> Adel:
+W howa ya5yar la date w le temps w tchofo availability
+
+> Adel:
+Idha disponibld tchadolo rdv
