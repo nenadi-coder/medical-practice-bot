@@ -1,118 +1,62 @@
 <?php
 require_once 'includes/config.php';
 
-$bot_token = '8330456846:AAHSmyKZrvCL5yLqpHjynBMqC6tM2u9k6N8'; 
+define('DB_HOST', 'db-mysql-nyc3-10499-do-user-36185384-0.e.db.ondigitalocean.com');
+define('DB_PORT', '25060');
+define('DB_NAME', 'if0_41555171_medical_practice');
+define('DB_USER', 'doadmin');
+define('DB_PASS', 'AVNS_xAlHu7MeZoKMxKJ7Esn');
+define('DB_SSL_CA', __DIR__ . '/ca-certificate.crt');
+define('BOT_TOKEN', '8330456846:AAHSmyKZrvCL5yLqpHjynBMqC6tM2u9k6N8');
 
-$content = file_get_contents('php://input');
-$update = json_decode($content, true);
+$pdo = new PDO(
+    "mysql:host=" . DB_HOST . ";port=" . DB_PORT . ";dbname=" . DB_NAME,
+    DB_USER,
+    DB_PASS,
+    [PDO::MYSQL_ATTR_SSL_CA => DB_SSL_CA]
+);
 
-if (!$update) {
-    exit();
+// Get appointments for tomorrow
+$stmt = $pdo->prepare("
+    SELECT 
+        a.*,
+        p.first_name,
+        p.last_name,
+        p.telegram_chat_id,
+        CONCAT(d.first_name, ' ', d.last_name) as doctor_name
+    FROM appointments a
+    JOIN patients p ON a.patient_id = p.patient_id
+    JOIN doctors d ON a.doctor_id = d.doctor_id
+    WHERE a.appointment_date = DATE_ADD(CURDATE(), INTERVAL 1 DAY)
+        AND a.status NOT IN ('cancelled', 'completed')
+        AND p.telegram_chat_id IS NOT NULL
+");
+$stmt->execute();
+$appointments = $stmt->fetchAll();
+
+foreach ($appointments as $apt) {
+    $message = "🔔 *Appointment Reminder*\n\n";
+    $message .= "Dear *{$apt['first_name']}*,\n\n";
+    $message .= "This is a reminder of your appointment tomorrow:\n\n";
+    $message .= "📅 *Date:* " . date('l, F j', strtotime($apt['appointment_date'])) . "\n";
+    $message .= "⏰ *Time:* " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
+    $message .= "👨‍⚕️ *Doctor:* Dr. {$apt['doctor_name']}\n\n";
+    $message .= "Please arrive 15 minutes early.\n";
+    $message .= "Use /next to see details.";
+    
+    sendTelegramMessage($apt['telegram_chat_id'], $message);
 }
 
-// Handle messages
-if (isset($update['message'])) {
-    $message = $update['message'];
-    $chat_id = $message['chat']['id'];
-    $text = trim($message['text'] ?? '');
-    $username = $message['from']['username'] ?? '';
-    $first_name = $message['from']['first_name'] ?? '';
+function sendTelegramMessage($chat_id, $message) {
+    $url = "https://api.telegram.org/bot" . BOT_TOKEN . "/sendMessage";
+    $data = ['chat_id' => $chat_id, 'text' => $message, 'parse_mode' => 'Markdown'];
     
-    // Handle /start command
-    if ($text == '/start') {
-        $response = "🏥 *Welcome to Shifa Medical Center Bot!*\n\n";
-        $response .= "This bot helps you receive appointment reminders and updates.\n\n";
-        $response .= "📌 *To link your account:*\n";
-        $response .= "1. Login to your patient portal\n";
-        $response .= "2. Click 'Link Telegram Account'\n";
-        $response .= "3. Or use this link:\n";
-        $response .= "https://yourdomain.com/patient/link_telegram.php?chat_id=$chat_id\n\n";
-        $response .= "_You will receive appointment reminders here once linked._";
-        
-        sendMessage($chat_id, $response, $bot_token);
-    }
-    // Handle /help
-    elseif ($text == '/help') {
-        $response = "🤖 *Available Commands:*\n\n";
-        $response .= "/start - Welcome message\n";
-        $response .= "/help - Show this help\n";
-        $response .= "/status - Check your account status\n";
-        $response .= "/next - Show your next appointment";
-        
-        sendMessage($chat_id, $response, $bot_token);
-    }
-    // Handle /status
-    elseif ($text == '/status') {
-        $stmt = $pdo->prepare("SELECT * FROM patients WHERE telegram_chat_id = ? OR telegram_user_id = ?");
-        $stmt->execute([$chat_id, $chat_id]);
-        $patient = $stmt->fetch();
-        
-        if ($patient) {
-            $response = "✅ *Account Linked!*\n\n";
-            $response .= "Name: {$patient['first_name']} {$patient['last_name']}\n";
-            $response .= "Email: {$patient['email']}\n";
-            $response .= "You will receive appointment reminders here.";
-        } else {
-            $response = "❌ *Account Not Linked*\n\n";
-            $response .= "Please login to your patient portal and link your Telegram account.\n";
-            $response .= "Or contact the clinic for assistance.";
-        }
-        sendMessage($chat_id, $response, $bot_token);
-    }
-    // Handle /next
-    elseif ($text == '/next') {
-        $stmt = $pdo->prepare("SELECT * FROM patients WHERE telegram_chat_id = ? OR telegram_user_id = ?");
-        $stmt->execute([$chat_id, $chat_id]);
-        $patient = $stmt->fetch();
-        
-        if ($patient) {
-            $apt_stmt = $pdo->prepare("
-                SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
-                FROM appointments a
-                JOIN doctors d ON a.doctor_id = d.doctor_id
-                WHERE a.patient_id = ? AND a.appointment_date >= CURDATE() 
-                AND a.status IN ('scheduled', 'confirmed')
-                ORDER BY a.appointment_date ASC, a.appointment_time ASC
-                LIMIT 1
-            ");
-            $apt_stmt->execute([$patient['patient_id']]);
-            $appointment = $apt_stmt->fetch();
-            
-            if ($appointment) {
-                $response = "📅 *Your Next Appointment*\n\n";
-                $response .= "Date: " . date('l, F j, Y', strtotime($appointment['appointment_date'])) . "\n";
-                $response .= "Time: " . date('g:i A', strtotime($appointment['appointment_time'])) . "\n";
-                $response .= "Doctor: Dr. {$appointment['doctor_name']}\n";
-                $response .= "Queue #: {$appointment['queue_number']}\n\n";
-                $response .= "Please arrive 10 minutes early!";
-            } else {
-                $response = "📅 *No Upcoming Appointments*\n\nYou have no upcoming appointments scheduled.";
-            }
-            sendMessage($chat_id, $response, $bot_token);
-        } else {
-            $response = "❌ Please link your account first using the patient portal.";
-            sendMessage($chat_id, $response, $bot_token);
-        }
-    }
-}
-
-function sendMessage($chat_id, $message, $bot_token) {
-    $url = "https://api.telegram.org/bot{$bot_token}/sendMessage";
-    $data = [
-        'chat_id' => $chat_id,
-        'text' => $message,
-        'parse_mode' => 'Markdown'
-    ];
+    $options = ['http' => [
+        'header' => "Content-Type: application/json\r\n",
+        'method' => 'POST',
+        'content' => json_encode($data)
+    ]];
     
-    $options = [
-        'http' => [
-            'header' => "Content-type: application/x-www-form-urlencoded\r\n",
-            'method' => 'POST',
-            'content' => http_build_query($data)
-        ]
-    ];
-    
-    $context = stream_context_create($options);
-    file_get_contents($url, false, $context);
+    file_get_contents($url, false, stream_context_create($options));
 }
 ?>
