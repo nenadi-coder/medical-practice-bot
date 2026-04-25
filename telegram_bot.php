@@ -1,5 +1,5 @@
 <?php
-
+require_once 'includes/config.php';
 // Database configuration
 define('DB_HOST', 'db-mysql-nyc3-10499-do-user-36185384-0.e.db.ondigitalocean.com');
 define('DB_PORT', '25060');
