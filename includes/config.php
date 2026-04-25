@@ -1,5 +1,7 @@
 <?php
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 // ---------------------------------------------------------------------------
 // Database connection — override any of these via environment variables so
@@ -32,10 +34,12 @@ try {
 /* ================================
    TELEGRAM LINKING PATCH (FIXED)
    ================================ */
-if (isset($_GET['telegram_user_id']) && isset($_GET['patient_id'])) {
+if (isset($_GET['telegram_user_id']) && isset($_GET['patient_id'])
+    && isset($_SESSION['patient_id'])
+    && (int) $_SESSION['patient_id'] === (int) $_GET['patient_id']) {
 
     $telegram_user_id = $_GET['telegram_user_id'];
-    $patient_id = $_GET['patient_id'];
+    $patient_id = (int) $_GET['patient_id'];
 
     $stmt = $pdo->prepare("
         UPDATE patients 

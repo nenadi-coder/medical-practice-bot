@@ -25,7 +25,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         // Verify the hashed password
         if ($doctor && password_verify($password, $doctor['password'])) {
             $_SESSION['doctor_id'] = $doctor['doctor_id'];
-            $_SESSION['doctor_name'] = 'Dr. ' . $doctor['first_name'] . ' ' . $doctor['last_name'];
+            $_SESSION['doctor_name'] = $doctor['first_name'] . ' ' . $doctor['last_name'];
             $_SESSION['user_type'] = 'doctor';
             
             header('Location: dashboard.php');

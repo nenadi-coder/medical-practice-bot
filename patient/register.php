@@ -221,13 +221,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     throw new RuntimeException('Registration failed while saving the patient.');
                 }
 
-                $syncResult = syncPatientToTelegramDatabase($form);
+                $pdo->commit();
 
+                // Sync to Telegram database — non-fatal: registration succeeds regardless.
+                $syncResult = syncPatientToTelegramDatabase($form);
                 if (!$syncResult['ok']) {
-                    throw new RuntimeException($syncResult['message']);
+                    error_log('Telegram sync failed for ' . $form['email'] . ': ' . $syncResult['message']);
                 }
 
-                $pdo->commit();
                 $success = 'Registration successful! You can now login.';
                // $syncStatus = '✅ Patient synced to Telegram database.';
                 $form = resetForm();
