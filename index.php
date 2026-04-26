@@ -402,7 +402,7 @@
                 <i class="fas fa-phone-alt"></i> <span>0567890123</span>
             </div>
             <div class="contact-item hours">
-                <i class="far fa-clock"></i> <span>Mon-Fri: 8AM–6PM</span>
+                <i class="far fa-clock"></i> <span>Sun-Thu: 8AM–4PM</span>
             </div>
             <div class="contact-item">
                 <i class="fas fa-map-marker-alt"></i> <span>123 Health Street, Medical City</span>
@@ -417,7 +417,7 @@
             <div class="feature-card">
                 <div class="feature-icon"><i class="fas fa-user-md"></i></div>
                 <h3>Expert Team</h3>
-                <p>Board-certified physicians with decades of experience</p>
+                <p>Board-certified physician with decades of experience</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon"><i class="fas fa-file-invoice-dollar"></i></div>
