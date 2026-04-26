@@ -432,7 +432,7 @@
         </div>
         <div class="address-mini">
             <i class="fas fa-location-dot"></i> 123 Health Street, Medical City &nbsp;|&nbsp; 
-            <i class="fas fa-phone"></i> (0567890123
+            <i class="fas fa-phone"></i> (0567890123)
         </div>
     </div>
 
