@@ -1,32 +1,69 @@
 <?php
-session_start();
+// Guard against calling session_start() when headers have already been sent
+// (e.g. telegram_bot.php acks the request via fastcgi_finish_request() before
+// including this file).
+if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+    session_start();
+}
 
 // ---------------------------------------------------------------------------
-// Database connection — override any of these via environment variables so
-// that secrets are never hard-coded in source control.
+// Database connection — all values MUST be supplied via environment variables.
+// No hard-coded secrets are present in this file.
 // ---------------------------------------------------------------------------
-$host     = getenv('DB_HOST')     ?: 'db-mysql-nyc3-10499-do-user-36185384-0.e.db.ondigitalocean.com';
-$dbname   = getenv('DB_NAME')     ?: 'defaultdb';
-$username = getenv('DB_USERNAME') ?: 'doadmin';
-$password = getenv('DB_PASSWORD') ?: 'AVNS_bO2G7PtVCtrA6uXCiYp';
+$host     = getenv('DB_HOST')     ?: '';
+$dbname   = getenv('DB_NAME')     ?: '';
+$username = getenv('DB_USERNAME') ?: '';
+$password = getenv('DB_PASSWORD') ?: '';
+// DigitalOcean managed MySQL uses port 25060 by default.
+$port     = (int) (getenv('DB_PORT') ?: 25060);
 
 // ---------------------------------------------------------------------------
 // Telegram Bot Token
-// Set the TELEGRAM_BOT_TOKEN environment variable on your server.
-// Example (Linux/Apache):  export TELEGRAM_BOT_TOKEN="your_token_here"
-// Example (.env file):     TELEGRAM_BOT_TOKEN=your_token_here
+// Set the TELEGRAM_BOT_TOKEN environment variable on your server/platform.
 // ---------------------------------------------------------------------------
-define('TELEGRAM_BOT_TOKEN', getenv('TELEGRAM_BOT_TOKEN') ?: '8330456846:AAHSmyKZrvCL5yLqpHjynBMqC6tM2u9k6N8');
+define('TELEGRAM_BOT_TOKEN', getenv('TELEGRAM_BOT_TOKEN') ?: '');
+
+// ---------------------------------------------------------------------------
+// PDO options: fast-fail timeout, proper error mode, no emulated prepares.
+// ---------------------------------------------------------------------------
+$pdoOptions = [
+    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    PDO::ATTR_EMULATE_PREPARES   => false,
+    PDO::ATTR_TIMEOUT            => 5,
+    PDO::MYSQL_ATTR_CONNECT_TIMEOUT => 5,
+];
+
+// ---------------------------------------------------------------------------
+// SSL support: enabled when DB_SSL=true OR when the port is 25060
+// (DigitalOcean managed MySQL requires TLS on that port).
+// Override the CA path with DB_CA_PATH if needed.
+// ---------------------------------------------------------------------------
+$dbSslEnv = getenv('DB_SSL');
+$useSSL   = ($dbSslEnv !== false && filter_var($dbSslEnv, FILTER_VALIDATE_BOOLEAN))
+            || $port === 25060;
+
+if ($useSSL) {
+    $caPath = getenv('DB_CA_PATH') ?: __DIR__ . '/../ca-certificate.crt';
+    if (file_exists($caPath)) {
+        $pdoOptions[PDO::MYSQL_ATTR_SSL_CA] = $caPath;
+    }
+}
 
 try {
     $pdo = new PDO(
-        "mysql:host=$host;dbname=$dbname;charset=utf8",
+        "mysql:host={$host};port={$port};dbname={$dbname};charset=utf8mb4",
         $username,
-        $password
+        $password,
+        $pdoOptions
     );
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-} catch(PDOException $e) {
-    die("Connection failed: " . $e->getMessage());
+} catch (PDOException $e) {
+    error_log('DB connection error: ' . $e->getMessage());
+    if (!headers_sent()) {
+        http_response_code(500);
+        echo '<p>We are having trouble connecting to the database. Please try again in a moment.</p>';
+    }
+    exit();
 }
 
 /* ================================

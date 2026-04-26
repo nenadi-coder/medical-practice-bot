@@ -1,13 +1,34 @@
 <?php
-require_once 'includes/config.php';
+// ---------------------------------------------------------------------------
+// Acknowledge the webhook to Telegram IMMEDIATELY so Apache/PHP-FPM never
+// times out waiting for us.  fastcgi_finish_request() closes the HTTP
+// connection while the script continues executing in the background.
+// ---------------------------------------------------------------------------
+http_response_code(200);
+header('Content-Type: application/json');
+header('Content-Length: 2');
+echo '{}';
+if (function_exists('fastcgi_finish_request')) {
+    fastcgi_finish_request();
+} else {
+    // Fallback for non-FPM environments (e.g. mod_php).
+    if (ob_get_level()) {
+        ob_end_flush();
+    }
+    flush();
+}
 
 // ---------------------------------------------------------------------------
-// Bot token — read from config (set TELEGRAM_BOT_TOKEN env variable).
+// Now load config + process the update.  If the DB is unreachable the
+// connection will time out quickly (PDO::MYSQL_ATTR_CONNECT_TIMEOUT = 5 s)
+// rather than hanging for 30+ seconds.
 // ---------------------------------------------------------------------------
+require_once 'includes/config.php';
+
+// Bot token — read from config (set TELEGRAM_BOT_TOKEN env variable).
 $bot_token = TELEGRAM_BOT_TOKEN;
 
 if (empty($bot_token)) {
-    http_response_code(200);
     exit();
 }
 
@@ -15,7 +36,11 @@ $content = file_get_contents('php://input');
 $update  = json_decode($content, true);
 
 if (!$update || !isset($update['message'])) {
-    http_response_code(200);
+    exit();
+}
+
+// Guard: if DB connection failed (config.php exited), stop here.
+if (!isset($pdo)) {
     exit();
 }
 
@@ -47,15 +72,17 @@ function sendMessage(int $chat_id, string $message, string $bot_token): void
         'text'       => $message,
         'parse_mode' => 'Markdown',
     ];
-    $options = [
-        'http' => [
-            'header'  => "Content-type: application/x-www-form-urlencoded\r\n",
-            'method'  => 'POST',
-            'content' => http_build_query($data),
-        ],
-    ];
-    $context = stream_context_create($options);
-    @file_get_contents($url, false, $context);
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => http_build_query($data),
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 5,   // seconds to establish connection
+        CURLOPT_TIMEOUT        => 10,  // seconds for the whole request
+    ]);
+    @curl_exec($ch);
+    curl_close($ch);
 }
 
 function getSession(PDO $pdo, int $user_id): ?array
