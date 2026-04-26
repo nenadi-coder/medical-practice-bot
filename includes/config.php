@@ -20,15 +20,32 @@ $password = getenv('DB_PASSWORD') ?: 'AVNS_bO2G7PtVCtrA6uXCiYp';
 // ---------------------------------------------------------------------------
 define('TELEGRAM_BOT_TOKEN', getenv('TELEGRAM_BOT_TOKEN') ?: '8330456846:AAHSmyKZrvCL5yLqpHjynBMqC6tM2u9k6N8');
 
+// ---------------------------------------------------------------------------
+// PDO connection options — attach the DigitalOcean CA certificate for SSL
+// verification when the file is present in the repository root.
+// ---------------------------------------------------------------------------
+$pdoOptions = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION];
+$caCert = __DIR__ . '/../ca-certificate.crt';
+if (file_exists($caCert)) {
+    $pdoOptions[PDO::MYSQL_ATTR_SSL_CA]                = $caCert;
+    $pdoOptions[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = true;
+}
+
 try {
     $pdo = new PDO(
         "mysql:host=$host;dbname=$dbname;charset=utf8",
         $username,
-        $password
+        $password,
+        $pdoOptions
     );
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-} catch(PDOException $e) {
-    die("Connection failed: " . $e->getMessage());
+} catch (PDOException $e) {
+    error_log('Database connection failed: ' . $e->getMessage());
+    if (php_sapi_name() !== 'cli') {
+        http_response_code(503);
+        echo 'Service temporarily unavailable. Please try again later.';
+        exit;
+    }
+    exit(1);
 }
 
 /* ================================
