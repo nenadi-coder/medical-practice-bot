@@ -93,17 +93,25 @@ use the included secret-protected endpoint instead:
 
 ## Database Configuration
 
-The DB connection parameters can also be set via environment variables (defaults to the values in `includes/config.php`):
+All connection parameters **must** be supplied as environment variables.
+No secrets are stored in source code.
 
-| Variable | Default |
-|---|---|
-| `DB_HOST` | *(DigitalOcean host)* |
-| `DB_NAME` | `defaultdb` |
-| `DB_USERNAME` | `doadmin` |
-| `DB_PASSWORD` | *(stored in config)* |
-| `TELEGRAM_BOT_TOKEN` | *(must be set — no default)* |
-| `DEFAULT_DOCTOR_ID` | `1` (doctor assigned to Telegram bookings) |
-| `MIGRATION_KEY` | *(weak built-in default — always set a long random value in production)* |
+| Variable | Required | Description |
+|---|---|---|
+| `DB_HOST` | ✅ | Database hostname (e.g. DigitalOcean managed DB host) |
+| `DB_PORT` | ✅ | Database port — **`25060`** for DigitalOcean managed MySQL |
+| `DB_NAME` | ✅ | Database / schema name |
+| `DB_USERNAME` | ✅ | Database user |
+| `DB_PASSWORD` | ✅ | Database password |
+| `TELEGRAM_BOT_TOKEN` | ✅ | Telegram bot token from BotFather |
+| `DEFAULT_DOCTOR_ID` | optional | Doctor assigned to Telegram bookings (default: `1`) |
+| `MIGRATION_KEY` | optional | Secret key protecting `/admin/run_migrations.php` |
+| `DB_SSL` | optional | Set to `true` to force TLS for DB connections. Defaults to `true` when `DB_PORT=25060` |
+| `DB_CA_PATH` | optional | Absolute path to the TLS CA certificate (default: `ca-certificate.crt` in repo root) |
+
+> ⚠️ **DigitalOcean managed MySQL** listens on port **25060** and **requires TLS**.
+> SSL is automatically enabled when `DB_PORT=25060` (the default). The included
+> `ca-certificate.crt` is used unless you override `DB_CA_PATH`.
 
 ---
 
