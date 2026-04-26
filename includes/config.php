@@ -2,7 +2,7 @@
 session_start();
 
 $host = 'db-mysql-nyc3-10499-do-user-36185384-0.e.db.ondigitalocean.com';
-$dbname = 'medical_practice';
+$dbname = 'defaultdb';
 $username = 'doadmin';
 $password = 'AVNS_bO2G7PtVCtrA6uXCiYp';
 
