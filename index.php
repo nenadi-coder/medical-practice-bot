@@ -455,7 +455,7 @@
         <div class="footer-right">
             <span><i class="fas fa-map-pin"></i> 123 Health Street, Medical City</span>
             <span><i class="fas fa-phone-alt"></i> 0567890123</span>
-            <span><i class="far fa-calendar-alt"></i> Mon-Fri: 8AM–6PM</span>
+            <span><i class="far fa-calendar-alt"></i> Sun-Thu: 8AM–4PM</span>
         </div>
     </div>
     <div class="copyright">
