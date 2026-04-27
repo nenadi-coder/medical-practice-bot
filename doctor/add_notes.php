@@ -2,6 +2,11 @@
 session_start();
 require_once '../includes/config.php';
 
+// ✅ FIX: Generate CSRF token if not exists
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 if (!isset($_SESSION['doctor_id'])) {
     header('Location: login.php');
     exit();
@@ -21,24 +26,31 @@ if ($patient_id) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $diagnosis = trim($_POST['diagnosis']);
-    $symptoms = trim($_POST['symptoms']);
-    $notes = trim($_POST['notes']);
-    $patient_id = $_POST['patient_id'];
-    $appointment_id = $_POST['appointment_id'] ?: null;
-    $record_date = date('Y-m-d');
-    
-    if (!empty($diagnosis) || !empty($notes)) {
-        $sql = "INSERT INTO medical_records (patient_id, appointment_id, record_date, diagnosis, symptoms, notes) 
-                VALUES (?, ?, ?, ?, ?, ?)";
-        $stmt = $pdo->prepare($sql);
-        if ($stmt->execute([$patient_id, $appointment_id, $record_date, $diagnosis, $symptoms, $notes])) {
-            $message = "Medical records added successfully!";
-        } else {
-            $error = "Failed to add medical records";
-        }
+    // ✅ FIX: Verify CSRF token
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $error = "Invalid security token. Please refresh the page and try again.";
     } else {
-        $error = "Please enter at least diagnosis or notes";
+        $diagnosis = trim($_POST['diagnosis']);
+        $symptoms = trim($_POST['symptoms']);
+        $notes = trim($_POST['notes']);
+        $patient_id = $_POST['patient_id'];
+        $appointment_id = $_POST['appointment_id'] ?: null;
+        $record_date = date('Y-m-d');
+        
+        if (!empty($diagnosis) || !empty($notes)) {
+            $sql = "INSERT INTO medical_records (patient_id, appointment_id, record_date, diagnosis, symptoms, notes) 
+                    VALUES (?, ?, ?, ?, ?, ?)";
+            $stmt = $pdo->prepare($sql);
+            if ($stmt->execute([$patient_id, $appointment_id, $record_date, $diagnosis, $symptoms, $notes])) {
+                $message = "Medical records added successfully!";
+                // ✅ FIX: Regenerate CSRF token after successful submission
+                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+            } else {
+                $error = "Failed to add medical records";
+            }
+        } else {
+            $error = "Please enter at least diagnosis or notes";
+        }
     }
 }
 ?>
@@ -284,6 +296,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <?php endif; ?>
             
             <form method="POST">
+                <!-- ✅ FIX: CSRF Token -->
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                 <input type="hidden" name="patient_id" value="<?php echo htmlspecialchars($patient_id); ?>">
                 <input type="hidden" name="appointment_id" value="<?php echo htmlspecialchars($appointment_id); ?>">
                 
