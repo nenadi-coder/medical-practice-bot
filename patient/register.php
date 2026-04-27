@@ -2,14 +2,8 @@
 
 require_once '../includes/config.php';
 
-// ADDED SYNC API KEY
-define('SYNC_API_KEY', 'nadia');
-
-const SYNC_FUNCTION_URL = 'https://auvglgofkuihkzxledtw.supabase.co/functions/v1/sync-data';
-
 $error = '';
 $success = '';
-$syncStatus = '';
 
 $form = [
     'first_name' => '',
@@ -32,140 +26,6 @@ function resetForm(): array
         'email' => '',
         'phone' => '',
         'date_of_birth' => '',
-    ];
-}
-
-function getSyncApiKey(): string
-{
-    if (defined('SYNC_API_KEY') && SYNC_API_KEY) {
-        return trim((string) SYNC_API_KEY);
-    }
-
-    $envValue = getenv('SYNC_API_KEY');
-    return $envValue !== false ? trim((string) $envValue) : '';
-}
-
-function parseHttpStatusCode(array $headers): int
-{
-    foreach ($headers as $headerLine) {
-        if (preg_match('#HTTP/\S+\s+(\d{3})#', $headerLine, $matches)) {
-            return (int) $matches[1];
-        }
-    }
-
-    return 0;
-}
-
-function syncPatientToTelegramDatabase(array $patient): array
-{
-    $syncApiKey = getSyncApiKey();
-
-    if ($syncApiKey === '') {
-        return [
-            'ok' => false,
-            'message' => 'SYNC_API_KEY is missing on the website server.',
-        ];
-    }
-
-    $payload = json_encode([
-        'action' => 'sync_patient',
-        'first_name' => $patient['first_name'],
-        'last_name' => $patient['last_name'],
-        'email' => $patient['email'],
-        'phone' => $patient['phone'],
-        'date_of_birth' => $patient['date_of_birth'],
-    ]);
-
-    if ($payload === false) {
-        return [
-            'ok' => false,
-            'message' => 'Failed to encode sync payload.',
-        ];
-    }
-
-    $responseBody = '';
-    $statusCode = 0;
-
-    if (function_exists('curl_init')) {
-        $ch = curl_init(SYNC_FUNCTION_URL);
-
-        curl_setopt_array($ch, [
-            CURLOPT_POST => true,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER => [
-                'Content-Type: application/json',
-                'x-sync-key: ' . $syncApiKey,
-            ],
-            CURLOPT_POSTFIELDS => $payload,
-            CURLOPT_CONNECTTIMEOUT => 10,
-            CURLOPT_TIMEOUT => 20,
-        ]);
-
-        $responseBody = curl_exec($ch);
-
-        if ($responseBody === false) {
-            $curlError = curl_error($ch);
-            curl_close($ch);
-
-            return [
-                'ok' => false,
-                'message' => 'Telegram sync request failed: ' . $curlError,
-            ];
-        }
-
-        $statusCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-    } else {
-        $context = stream_context_create([
-            'http' => [
-                'method' => 'POST',
-                'header' => implode("\r\n", [
-                    'Content-Type: application/json',
-                    'x-sync-key: ' . $syncApiKey,
-                ]),
-                'content' => $payload,
-                'timeout' => 20,
-                'ignore_errors' => true,
-            ],
-        ]);
-
-        $responseBody = @file_get_contents(SYNC_FUNCTION_URL, false, $context);
-        $responseHeaders = isset($http_response_header) && is_array($http_response_header)
-            ? $http_response_header
-            : [];
-        $statusCode = parseHttpStatusCode($responseHeaders);
-
-        if ($responseBody === false) {
-            return [
-                'ok' => false,
-                'message' => 'Telegram sync request failed and no response was returned.',
-            ];
-        }
-    }
-
-    $decoded = json_decode($responseBody, true);
-    $remoteError = is_array($decoded) && isset($decoded['error'])
-        ? (string) $decoded['error']
-        : 'Unknown sync error.';
-
-    if ($statusCode < 200 || $statusCode >= 300) {
-        return [
-            'ok' => false,
-            'message' => 'Telegram sync failed: ' . $remoteError,
-        ];
-    }
-
-    if (!is_array($decoded) || empty($decoded['ok'])) {
-        return [
-            'ok' => false,
-            'message' => 'Telegram sync failed: ' . $remoteError,
-        ];
-    }
-
-    return [
-        'ok' => true,
-        'message' => 'Patient synced to Telegram database.',
-        'data' => $decoded,
     ];
 }
 
@@ -195,16 +55,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Password must be at least 6 characters';
     } else {
         try {
-            $pdo->beginTransaction();
-
+            // Check if email already exists
             $checkSql = 'SELECT patient_id FROM patients WHERE LOWER(email) = ? LIMIT 1';
             $checkStmt = $pdo->prepare($checkSql);
             $checkStmt->execute([$form['email']]);
 
             if ($checkStmt->fetch()) {
-                $pdo->rollBack();
                 $error = 'Email already registered';
             } else {
+                // Insert new patient
                 $insertSql = 'INSERT INTO patients (first_name, last_name, email, phone, password, date_of_birth) VALUES (?, ?, ?, ?, ?, ?)';
                 $insertStmt = $pdo->prepare($insertSql);
 
@@ -217,28 +76,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $form['date_of_birth'],
                 ]);
 
-                if (!$inserted) {
-                    throw new RuntimeException('Registration failed while saving the patient.');
+                if ($inserted) {
+                    $success = 'Registration successful! You can now login.';
+                    $form = resetForm();
+                    $_POST = [];
+                } else {
+                    $error = 'Registration failed. Please try again.';
                 }
-
-                $syncResult = syncPatientToTelegramDatabase($form);
-
-                if (!$syncResult['ok']) {
-                    throw new RuntimeException($syncResult['message']);
-                }
-
-                $pdo->commit();
-                $success = 'Registration successful! You can now login.';
-               // $syncStatus = '✅ Patient synced to Telegram database.';
-                $form = resetForm();
-                $_POST = [];
             }
-        } catch (Throwable $exception) {
-            if ($pdo->inTransaction()) {
-                $pdo->rollBack();
-            }
-
-            $error = $exception->getMessage();
+        } catch (PDOException $exception) {
+            $error = 'Database error: ' . $exception->getMessage();
         }
     }
 }
@@ -391,12 +238,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             font-size: 0.85rem;
         }
 
-        .sync-status {
-            margin-top: 0.5rem;
-            font-size: 0.8rem;
-            color: #2d3748;
-        }
-
         .register-btn {
             width: 100%;
             background: linear-gradient(95deg, #4f46e5, #7c3aed);
@@ -480,9 +321,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php if ($success): ?>
             <div class="success">
                 <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($success, ENT_QUOTES, 'UTF-8'); ?>
-                <?php if ($syncStatus): ?>
-                    <div class="sync-status"><?php echo htmlspecialchars($syncStatus, ENT_QUOTES, 'UTF-8'); ?></div>
-                <?php endif; ?>
             </div>
         <?php endif; ?>
 
@@ -554,4 +392,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     </div>
 </body>
-</html> 
+</html>
