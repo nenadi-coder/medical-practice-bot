@@ -7,6 +7,11 @@ if (!isset($_SESSION['patient_id'])) {
     exit();
 }
 
+// CSRF Token
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 $success = '';
 $error = '';
 $today = date('Y-m-d');
@@ -18,50 +23,56 @@ $doctors = $doctor_stmt->fetchAll();
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $doctor_id = $_POST['doctor_id'];
-    $appointment_date = $_POST['appointment_date'];
-    $appointment_time = $_POST['appointment_time'];
-    $notes = $_POST['notes'] ?? '';
-    $patient_id = $_SESSION['patient_id'];
-    
-    // SMS preference - UNCHECKED BY DEFAULT = 0 (only 1 if checked)
-    $send_sms = isset($_POST['send_sms']) ? 1 : 0;
-    
-    if (empty($doctor_id) || empty($appointment_date) || empty($appointment_time)) {
-        $error = "Please fill all required fields";
+    // Verify CSRF token
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $error = "Invalid security token. Please refresh and try again.";
     } else {
-        // Check if patient already has an appointment on this day
-        $check_sql = "SELECT appointment_id FROM appointments 
-                      WHERE patient_id = ? AND appointment_date = ? 
-                      AND status IN ('scheduled', 'confirmed')";
-        $check_stmt = $pdo->prepare($check_sql);
-        $check_stmt->execute([$patient_id, $appointment_date]);
+        $doctor_id = $_POST['doctor_id'];
+        $appointment_date = $_POST['appointment_date'];
+        $appointment_time = $_POST['appointment_time'];
+        $notes = $_POST['notes'] ?? '';
+        $patient_id = $_SESSION['patient_id'];
+        $send_sms = isset($_POST['send_sms']) ? 1 : 0;
         
-        if ($check_stmt->rowCount() > 0) {
-            $error = "You already have an appointment on this date";
+        if (empty($doctor_id) || empty($appointment_date) || empty($appointment_time)) {
+            $error = "Please fill all required fields";
+        } elseif ($appointment_date < $today) {
+            $error = "Cannot book appointments in the past";
         } else {
-            // Calculate queue position
-            $queue_sql = "SELECT COUNT(*) + 1 as next_queue 
-                         FROM appointments 
-                         WHERE appointment_date = ? 
-                         AND appointment_time < ?";
-            $queue_stmt = $pdo->prepare($queue_sql);
-            $queue_stmt->execute([$appointment_date, $appointment_time]);
-            $queue_number = $queue_stmt->fetchColumn();
+            // Check if patient already has an appointment on this day
+            $check_sql = "SELECT appointment_id FROM appointments 
+                          WHERE patient_id = ? AND appointment_date = ? 
+                          AND status IN ('scheduled', 'confirmed')";
+            $check_stmt = $pdo->prepare($check_sql);
+            $check_stmt->execute([$patient_id, $appointment_date]);
             
-            if (!$queue_number) {
-                $queue_number = 1;
-            }
-            
-            // Insert appointment with send_sms preference (status = 'scheduled')
-            $sql = "INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, queue_number, notes, send_sms, status) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled')";
-            $stmt = $pdo->prepare($sql);
-            
-            if ($stmt->execute([$patient_id, $doctor_id, $appointment_date, $appointment_time, $queue_number, $notes, $send_sms])) {
-                $success = "Appointment request submitted! Waiting for nurse confirmation.";
+            if ($check_stmt->rowCount() > 0) {
+                $error = "You already have an appointment on this date";
             } else {
-                $error = "Failed to book appointment. Please try again.";
+                // FIXED: Calculate queue position based on time order for that date
+                $queue_sql = "SELECT COUNT(*) + 1 as next_queue 
+                             FROM appointments 
+                             WHERE appointment_date = ? 
+                             AND appointment_time < ?";
+                $queue_stmt = $pdo->prepare($queue_sql);
+                $queue_stmt->execute([$appointment_date, $appointment_time]);
+                $queue_number = $queue_stmt->fetchColumn();
+                
+                if (!$queue_number) {
+                    $queue_number = 1;
+                }
+                
+                // Insert appointment
+                $sql = "INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, queue_number, notes, send_sms, status) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled')";
+                $stmt = $pdo->prepare($sql);
+                
+                if ($stmt->execute([$patient_id, $doctor_id, $appointment_date, $appointment_time, $queue_number, $notes, $send_sms])) {
+                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                    $success = "Appointment request submitted! Waiting for nurse confirmation.";
+                } else {
+                    $error = "Failed to book appointment. Please try again.";
+                }
             }
         }
     }
@@ -410,13 +421,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <a href="dashboard.php"><i class="fas fa-arrow-right"></i> View My Appointments →</a>
                 </div>
             <?php else: ?>
-            
-              <!--  <div class="info-box">
-                    <i class="fas fa-info-circle" style="font-size: 1.2rem; color: #4f46e5;"></i>
-                    <span><strong>Note:</strong> Appointments are scheduled based on time order. Earlier appointment times get lower queue numbers.</span>
-                </div>-->
                 
                 <form method="POST" action="">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
+                    
                     <div class="form-group">
                         <label for="doctor_id"><i class="fas fa-user-md"></i> Select Doctor</label>
                         <div class="input-wrapper">
