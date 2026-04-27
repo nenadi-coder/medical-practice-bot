@@ -1,6 +1,7 @@
 <?php
+error_log("=== nurse/login.php started ===");
 require_once '../includes/config.php';
-
+error_log("=== config.php loaded ===");
 // Redirect if already logged in
 if (isset($_SESSION['nurse_id'])) {
     header('Location: dashboard.php');
