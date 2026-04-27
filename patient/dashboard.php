@@ -1,37 +1,48 @@
 <?php
 require_once '../includes/config.php';
 
+// CSRF Token
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 // Check if user is logged in
 if (!isset($_SESSION['patient_id'])) {
     header('Location: login.php');
     exit();
 }
 
-// Handle cancellation request
+// Handle cancellation request with CSRF protection
 if (isset($_GET['cancel_id'])) {
-    $appointment_id = $_GET['cancel_id'];
-    $patient_id = $_SESSION['patient_id'];
-    
-    // Verify this appointment belongs to the logged-in patient
-    $check_sql = "SELECT appointment_id FROM appointments 
-                  WHERE appointment_id = ? AND patient_id = ? 
-                  AND status IN ('scheduled', 'confirmed')";
-    $check_stmt = $pdo->prepare($check_sql);
-    $check_stmt->execute([$appointment_id, $patient_id]);
-    
-    if ($check_stmt->rowCount() > 0) {
-        // Update status to cancelled
-        $cancel_sql = "UPDATE appointments SET status = 'cancelled' 
-                       WHERE appointment_id = ?";
-        $cancel_stmt = $pdo->prepare($cancel_sql);
-        
-        if ($cancel_stmt->execute([$appointment_id])) {
-            $success = "Appointment cancelled successfully.";
-        } else {
-            $error = "Failed to cancel appointment.";
-        }
+    // Verify CSRF token
+    if (!isset($_GET['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_GET['csrf_token'])) {
+        $error = "Invalid security token";
     } else {
-        $error = "Invalid appointment or you don't have permission to cancel this.";
+        $appointment_id = (int)$_GET['cancel_id'];
+        $patient_id = $_SESSION['patient_id'];
+        
+        // Verify this appointment belongs to the logged-in patient
+        $check_sql = "SELECT appointment_id FROM appointments 
+                      WHERE appointment_id = ? AND patient_id = ? 
+                      AND status IN ('scheduled', 'confirmed')";
+        $check_stmt = $pdo->prepare($check_sql);
+        $check_stmt->execute([$appointment_id, $patient_id]);
+        
+        if ($check_stmt->rowCount() > 0) {
+            // Update status to cancelled
+            $cancel_sql = "UPDATE appointments SET status = 'cancelled' 
+                           WHERE appointment_id = ?";
+            $cancel_stmt = $pdo->prepare($cancel_sql);
+            
+            if ($cancel_stmt->execute([$appointment_id])) {
+                $success = "Appointment cancelled successfully.";
+                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+            } else {
+                $error = "Failed to cancel appointment.";
+            }
+        } else {
+            $error = "Invalid appointment or you don't have permission to cancel this.";
+        }
     }
 }
 
@@ -399,8 +410,8 @@ $appointments = $stmt->fetchAll();
                 padding: 0 1rem;
             }
             .btn-telegram {
-    background: linear-gradient(95deg, #0088cc, #00a6e6);
-}
+                background: linear-gradient(95deg, #0088cc, #00a6e6);
+            }
         }
     </style>
 </head>
@@ -417,27 +428,27 @@ $appointments = $stmt->fetchAll();
     <div class="container">
         <?php if (isset($success)): ?>
             <div class="message success">
-                <i class="fas fa-check-circle"></i> <?php echo $success; ?>
+                <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($success); ?>
             </div>
         <?php endif; ?>
         
         <?php if (isset($error)): ?>
             <div class="message error">
-                <i class="fas fa-exclamation-circle"></i> <?php echo $error; ?>
+                <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($error); ?>
             </div>
         <?php endif; ?>
         
-      <div class="welcome-card">
-    <h2><i class="fas fa-calendar-check" style="color: #4f46e5;"></i> My Appointments</h2>
-    <div class="btn-group">            
-        <a href="https://t.me/Medical_Practice_Bot" target="_blank" class="btn btn-telegram">
-            <i class="fab fa-telegram"></i> Telegram Bot
-        </a>
-        <a href="book_appointment.php" class="btn">
-            <i class="fas fa-plus-circle"></i> Book New Appointment
-        </a>
-    </div>
-</div>
+        <div class="welcome-card">
+            <h2><i class="fas fa-calendar-check" style="color: #4f46e5;"></i> My Appointments</h2>
+            <div class="btn-group">            
+                <a href="https://t.me/Medical_Practice_Bot" target="_blank" class="btn btn-telegram">
+                    <i class="fab fa-telegram"></i> Telegram Bot
+                </a>
+                <a href="book_appointment.php" class="btn">
+                    <i class="fas fa-plus-circle"></i> Book New Appointment
+                </a>
+            </div>
+        </div>
         
         <div class="appointments-grid">
             <?php if (count($appointments) > 0): ?>
@@ -453,7 +464,7 @@ $appointments = $stmt->fetchAll();
                             </div>
                             <span class="status status-<?php echo $appointment['status']; ?>">
                                 <i class="fas <?php echo $appointment['status'] == 'scheduled' ? 'fa-clock' : ($appointment['status'] == 'confirmed' ? 'fa-check-circle' : ($appointment['status'] == 'completed' ? 'fa-flag-checkered' : 'fa-ban')); ?>"></i>
-                                <?php echo ucfirst($appointment['status']); ?>
+                                <?php echo ucfirst(htmlspecialchars($appointment['status'])); ?>
                             </span>
                         </div>
                         
@@ -487,15 +498,15 @@ $appointments = $stmt->fetchAll();
                                 ?>
                                 
                                 <div class="queue-info">
-                                    <div class="detail-item"><i class="fas fa-ticket-alt"></i> Queue #: <strong><?php echo $appointment['queue_number']; ?></strong></div>
+                                    <div class="detail-item"><i class="fas fa-ticket-alt"></i> Queue #: <strong><?php echo htmlspecialchars($appointment['queue_number']); ?></strong></div>
                                     <div class="queue-position">
-                                        📊 Position: <?php echo $people_ahead + 1; ?> of <?php echo $total_waiting; ?> waiting
+                                        📊 Position: <?php echo htmlspecialchars($people_ahead + 1); ?> of <?php echo htmlspecialchars($total_waiting); ?> waiting
                                     </div>
-                                    <div class="detail-item"><i class="fas fa-users"></i> People ahead: <?php echo $people_ahead; ?></div>
+                                    <div class="detail-item"><i class="fas fa-users"></i> People ahead: <?php echo htmlspecialchars($people_ahead); ?></div>
                                     
                                     <?php if ($people_ahead > 0): ?>
                                         <div class="wait-time">
-                                            <i class="fas fa-hourglass-half"></i> Estimated wait: ~<?php echo $people_ahead * 15; ?> minutes
+                                            <i class="fas fa-hourglass-half"></i> Estimated wait: ~<?php echo htmlspecialchars($people_ahead * 15); ?> minutes
                                             <br><small>(based on 15 min per patient)</small>
                                         </div>
                                     <?php else: ?>
@@ -506,7 +517,7 @@ $appointments = $stmt->fetchAll();
                                 </div>
                             <?php else: ?>
                                 <?php if ($appointment['queue_number']): ?>
-                                    <div class="detail-item"><i class="fas fa-ticket-alt"></i> Queue #: <?php echo $appointment['queue_number']; ?></div>
+                                    <div class="detail-item"><i class="fas fa-ticket-alt"></i> Queue #: <?php echo htmlspecialchars($appointment['queue_number']); ?></div>
                                 <?php endif; ?>
                             <?php endif; ?>
                             
@@ -519,7 +530,7 @@ $appointments = $stmt->fetchAll();
                         
                         <div class="appointment-actions">
                             <?php if ($appointment['status'] == 'scheduled' || $appointment['status'] == 'confirmed'): ?>
-                                <a href="?cancel_id=<?php echo $appointment['appointment_id']; ?>" 
+                                <a href="?cancel_id=<?php echo $appointment['appointment_id']; ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" 
                                    class="btn btn-cancel"
                                    onclick="return confirm('Are you sure you want to cancel this appointment? This action cannot be undone.');">
                                     <i class="fas fa-times-circle"></i> Cancel
@@ -554,7 +565,6 @@ $appointments = $stmt->fetchAll();
     </div>
     
     <script>
-        // Cancel confirmation is handled inline with onclick, but adding extra safety
         document.querySelectorAll('.btn-cancel').forEach(button => {
             button.addEventListener('click', function(e) {
                 if (!confirm('Are you sure you want to cancel this appointment? This action cannot be undone.')) {
