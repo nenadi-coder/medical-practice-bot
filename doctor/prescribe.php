@@ -2,9 +2,10 @@
 session_start();
 require_once '../includes/config.php';
 
-if (!isset($_SESSION['doctor_id'])) {<?php
-session_start();
-require_once '../includes/config.php';
+// Generate CSRF token if not exists
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
 
 if (!isset($_SESSION['doctor_id'])) {
     header('Location: login.php');
@@ -28,56 +29,59 @@ if ($patient_id) {
 $medications = $pdo->query("SELECT medication_id, medication_name FROM medications ORDER BY medication_name");
 
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
-    $medication_name = trim($_POST['medication_name']);
-    $dosage = trim($_POST['dosage']);
-    $frequency = trim($_POST['frequency']);
-    $duration = trim($_POST['duration']);
-    $instructions = trim($_POST['instructions']);
-    $patient_id = $_POST['patient_id'];
-    $appointment_id = $_POST['appointment_id'] ?: null;
-    $prescription_date = date('Y-m-d');
-    
-    if (!empty($medication_name) && !empty($dosage)) {
-        // Check if medication exists
-        $check_med = $pdo->prepare("SELECT medication_id FROM medications WHERE medication_name = ?");
-        $check_med->execute([$medication_name]);
-        $medication = $check_med->fetch();
+    // Verify CSRF token
+    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $error = "Invalid security token. Please refresh and try again.";
+    } else {
+        $medication_name = trim($_POST['medication_name']);
+        $dosage = trim($_POST['dosage']);
+        $frequency = trim($_POST['frequency']);
+        $duration = trim($_POST['duration']);
+        $instructions = trim($_POST['instructions']);
+        $patient_id = $_POST['patient_id'];
+        $appointment_id = $_POST['appointment_id'] ?: null;
+        $prescription_date = date('Y-m-d');
         
-        if (!$medication) {
-            $add_med = $pdo->prepare("INSERT INTO medications (medication_name) VALUES (?)");
-            $add_med->execute([$medication_name]);
-            $medication_id = $pdo->lastInsertId();
-        } else {
-            $medication_id = $medication['medication_id'];
-        }
-        
-        // Create prescription
-        $sql = "INSERT INTO prescriptions (patient_id, appointment_id, prescription_date, notes) 
-                VALUES (?, ?, ?, ?)";
-        $stmt = $pdo->prepare($sql);
-        if ($stmt->execute([$patient_id, $appointment_id, $prescription_date, $instructions])) {
-            $prescription_id = $pdo->lastInsertId();
+        if (!empty($medication_name) && !empty($dosage)) {
+            // Check if medication exists
+            $check_med = $pdo->prepare("SELECT medication_id FROM medications WHERE medication_name = ?");
+            $check_med->execute([$medication_name]);
+            $medication = $check_med->fetch();
             
-            // Add prescription details
-            $sql_detail = "INSERT INTO prescription_details (prescription_id, medication_id, dosage, frequency, duration, instructions) 
-                          VALUES (?, ?, ?, ?, ?, ?)";
-            $stmt_detail = $pdo->prepare($sql_detail);
-            if ($stmt_detail->execute([$prescription_id, $medication_id, $dosage, $frequency, $duration, $instructions])) {
-                $message = "Prescription added successfully!";
-                // Clear form after successful submission
-                $medication_name = '';
-                $dosage = '';
-                $frequency = '';
-                $duration = '';
-                $instructions = '';
+            if (!$medication) {
+                $add_med = $pdo->prepare("INSERT INTO medications (medication_name) VALUES (?)");
+                $add_med->execute([$medication_name]);
+                $medication_id = $pdo->lastInsertId();
             } else {
-                $error = "Failed to add prescription details";
+                $medication_id = $medication['medication_id'];
+            }
+            
+            // Create prescription
+            $sql = "INSERT INTO prescriptions (patient_id, appointment_id, prescription_date, notes) 
+                    VALUES (?, ?, ?, ?)";
+            $stmt = $pdo->prepare($sql);
+            if ($stmt->execute([$patient_id, $appointment_id, $prescription_date, $instructions])) {
+                $prescription_id = $pdo->lastInsertId();
+                
+                // Add prescription details
+                $sql_detail = "INSERT INTO prescription_details (prescription_id, medication_id, dosage, frequency, duration, instructions) 
+                              VALUES (?, ?, ?, ?, ?, ?)";
+                $stmt_detail = $pdo->prepare($sql_detail);
+                if ($stmt_detail->execute([$prescription_id, $medication_id, $dosage, $frequency, $duration, $instructions])) {
+                    $message = "Prescription added successfully!";
+                    // Regenerate CSRF token after success
+                    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                    // Clear form values
+                    $medication_name = $dosage = $frequency = $duration = $instructions = '';
+                } else {
+                    $error = "Failed to add prescription details";
+                }
+            } else {
+                $error = "Failed to add prescription";
             }
         } else {
-            $error = "Failed to add prescription";
+            $error = "Medication name and dosage are required";
         }
-    } else {
-        $error = "Medication name and dosage are required";
     }
 }
 ?>
@@ -200,7 +204,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             box-shadow: 0 0 0 3px rgba(237, 137, 54, 0.15);
         }
 
-        /* Datalist styling */
         input[list]::-webkit-calendar-picker-indicator {
             opacity: 0.6;
             cursor: pointer;
@@ -323,6 +326,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <?php endif; ?>
             
             <form method="POST">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION['csrf_token']); ?>">
                 <input type="hidden" name="patient_id" value="<?php echo htmlspecialchars($patient_id); ?>">
                 <input type="hidden" name="appointment_id" value="<?php echo htmlspecialchars($appointment_id); ?>">
                 
@@ -389,4 +393,3 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     </div>
 </body>
 </html>
-    
