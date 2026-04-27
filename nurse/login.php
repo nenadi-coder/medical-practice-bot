@@ -24,6 +24,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         
         // Verify the hashed password using password_verify()
         if ($nurse && password_verify($password, $nurse['password'])) {
+            // ✅ FIX: Regenerate session ID to prevent session fixation
+            session_regenerate_id(true);
+            
             // Login successful
             $_SESSION['nurse_id'] = $nurse['nurse_id'];
             $_SESSION['nurse_name'] = $nurse['first_name'] . ' ' . $nurse['last_name'];
