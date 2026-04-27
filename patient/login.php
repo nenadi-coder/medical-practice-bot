@@ -40,6 +40,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
 
         if ($loginSuccess) {
+            // ✅ FIX: Regenerate session ID to prevent session fixation
+            session_regenerate_id(true);
+            
             // Login successful
             $_SESSION['patient_id']   = $patient['patient_id'];
             $_SESSION['patient_name'] = $patient['first_name'] . ' ' . $patient['last_name'];
