@@ -1,37 +1,28 @@
 <?php
 session_start();
 
-$host = 'db-mysql-nyc3-10499-do-user-36185384-0.e.db.ondigitalocean.com';
-$dbname = 'defaultdb';
-$username = 'doadmin';
-$password = 'AVNS_bO2G7PtVCtrA6uXCiYp';
+// Database configuration - use environment variables for security
+$host = getenv('DB_HOST') ?: 'db-mysql-nyc3-10499-do-user-36185384-0.e.db.ondigitalocean.com';
+$dbname = getenv('DB_NAME') ?: 'defaultdb';
+$username = getenv('DB_USER') ?: 'doadmin';
+$password = getenv('DB_PASSWORD') ?: '';  // ⚠️ SET THIS IN YOUR ENVIRONMENT
+
+// If no environment variable, you MUST set it manually (but NOT in version control)
+// $password = 'YOUR_PASSWORD_HERE';
 
 try {
     $pdo = new PDO(
-        "mysql:host=$host;dbname=$dbname;charset=utf8",
+        "mysql:host=$host;dbname=$dbname;charset=utf8mb4",
         $username,
         $password
     );
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 } catch(PDOException $e) {
-    die("Connection failed: " . $e->getMessage());
+    // Log error instead of exposing to users
+    error_log("Database connection failed: " . $e->getMessage());
+    die("Connection failed. Please try again later.");
 }
 
-/* ================================
-   TELEGRAM LINKING PATCH (FIXED)
-   ================================ */
-if (isset($_GET['telegram_user_id']) && isset($_GET['patient_id'])) {
-
-    $telegram_user_id = $_GET['telegram_user_id'];
-    $patient_id = $_GET['patient_id'];
-
-    $stmt = $pdo->prepare("
-        UPDATE patients 
-        SET telegram_user_id = ? 
-        WHERE patient_id = ?
-    ");
-
-    $stmt->execute([$telegram_user_id, $patient_id]);
-}
-
+// Note: Telegram linking has been moved to patient/link_telegram.php
 ?>
