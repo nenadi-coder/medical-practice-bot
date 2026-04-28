@@ -1,513 +1,611 @@
 <?php
+/**
+ * Shifa Medical Center - Telegram Bot (Webhook Handler)
+ * 
+ * ✅ EMAIL only for patient lookup (no phone)
+ * ✅ Uses ONLY columns from shifacenter.sql
+ * ✅ Compatible with patient/nurse dashboard session vars
+ * ✅ Clickable inline keyboards + message editing
+ * ✅ Proper error handling + PDO validation
+ */
+
 require_once 'includes/config.php';
 
-// Get bot token from environment variable
-$bot_token = getenv('TELEGRAM_BOT_TOKEN') ?: '';
-
-// FALLBACK - REMOVE IN PRODUCTION
+// ========== 1. SECURE TOKEN & PDO VALIDATION ==========
+$bot_token = getenv('TELEGRAM_BOT_TOKEN');
 if (empty($bot_token)) {
+    // Fallback for testing ONLY - REMOVE IN PRODUCTION
     $bot_token = '8330456846:AAFYmkLZFCx1qw4n2sQa5eRCJBO26NV1QYM';
+    error_log('[BOT] WARNING: Using fallback token. Set TELEGRAM_BOT_TOKEN env var.');
+}
+if (!preg_match('/^\d+:[A-Za-z0-9_-]{35,}$/', $bot_token)) {
+    error_log('[BOT] CRITICAL: Invalid bot token format');
+    http_response_code(500);
+    exit('Configuration error');
 }
 
-$content = file_get_contents('php://input');
-$update = json_decode($content, true);
-
-if (!$update) {
-    exit();
+// PDO validation - required before ANY database use
+if (!isset($pdo) || !($pdo instanceof PDO)) {
+    error_log('[BOT] CRITICAL: Database connection ($pdo) not available');
+    http_response_code(500);
+    exit('Service unavailable');
 }
 
-function sendMessage($chat_id, $message, $bot_token) {
-    $url = "https://api.telegram.org/bot{$bot_token}/sendMessage";
-    $data = [
-        'chat_id' => $chat_id,
-        'text' => $message,
-        'parse_mode' => 'Markdown'
-    ];
-    
-    $options = [
+// PDO hardening
+$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+$pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+$pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+
+// ========== 2. UI HELPER FUNCTIONS ==========
+function createInlineKeyboard(array $rows): string {
+    $keyboard = [];
+    foreach ($rows as $row) {
+        $keyboard[] = is_array($row[0] ?? null) ? $row : [$row];
+    }
+    return json_encode(['inline_keyboard' => $keyboard], JSON_UNESCAPED_UNICODE);
+}
+
+function telegramRequest(string $url, array $data, bool $raw = false): mixed {
+    $ctx = stream_context_create([
         'http' => [
-            'header' => "Content-Type: application/x-www-form-urlencoded\r\n",
             'method' => 'POST',
-            'content' => http_build_query($data)
+            'header' => "Content-Type: application/x-www-form-urlencoded\r\n",
+            'content' => http_build_query($data),
+            'timeout' => 10
         ]
-    ];
-    
-    $context = stream_context_create($options);
-    return file_get_contents($url, false, $context);
+    ]);
+    $res = @file_get_contents($url, false, $ctx);
+    return $raw ? $res : (json_decode($res, true)['ok'] ?? false);
 }
 
-function parseDateInput($input) {
+function sendMessage(int $chat_id, string $text, string $token, ?string $keyboard = null): bool {
+    $data = ['chat_id' => $chat_id, 'text' => $text, 'parse_mode' => 'Markdown', 'disable_web_page_preview' => true];
+    if ($keyboard) $data['reply_markup'] = $keyboard;
+    return telegramRequest("https://api.telegram.org/bot{$token}/sendMessage", $data);
+}
+
+function editMessageText(int $chat_id, int $mid, string $text, string $token, ?string $keyboard = null): bool {
+    $data = ['chat_id' => $chat_id, 'message_id' => $mid, 'text' => $text, 'parse_mode' => 'Markdown', 'disable_web_page_preview' => true];
+    if ($keyboard) $data['reply_markup'] = $keyboard;
+    $raw = telegramRequest("https://api.telegram.org/bot{$token}/editMessageText", $data, true);
+    return $raw !== false || strpos($raw, 'message is not modified') !== false;
+}
+
+function sendOrEdit(int $chat_id, ?int $mid, string $text, string $token, ?string $kb): bool {
+    return $mid !== null 
+        ? editMessageText($chat_id, $mid, $text, $token, $kb) 
+        : sendMessage($chat_id, $text, $token, $kb);
+}
+
+function answerCallback(string $cb_id, string $token, string $txt = '', bool $alert = false): void {
+    telegramRequest("https://api.telegram.org/bot{$token}/answerCallbackQuery", [
+        'callback_query_id' => $cb_id, 'text' => $txt, 'show_alert' => $alert ? 'true' : 'false'
+    ]);
+}
+
+// ========== 3. DATA HELPERS (Using EXACT schema columns) ==========
+function parseDateInput(string $input): DateTime|false {
     $input = trim($input);
-    
-    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $input)) {
-        $date = DateTime::createFromFormat('Y-m-d', $input);
-        if ($date && $date->format('Y-m-d') == $input) {
-            return $date;
+    foreach (['Y-m-d' => '/^\d{4}-\d{2}-\d{2}$/', 'd-m-Y' => '/^\d{2}-\d{2}-\d{4}$/', 'd/m/Y' => '#^\d{2}/\d{2}/\d{4}$#'] as $fmt => $pat) {
+        if (preg_match($pat, $input)) {
+            $d = DateTime::createFromFormat($fmt, $input);
+            if ($d && $d->format($fmt) === $input) return $d;
         }
     }
-    
-    if (preg_match('/^\d{2}-\d{2}-\d{4}$/', $input)) {
-        $date = DateTime::createFromFormat('d-m-Y', $input);
-        if ($date && $date->format('d-m-Y') == $input) {
-            return $date;
-        }
-    }
-    
-    if (preg_match('#^\d{2}/\d{2}/\d{4}$#', $input)) {
-        $date = DateTime::createFromFormat('d/m/Y', $input);
-        if ($date && $date->format('d/m/Y') == $input) {
-            return $date;
-        }
-    }
-    
     return false;
 }
 
-function getAvailableTimeSlots($pdo, $date, $doctor_id = 1) {
-    $bookedSlots = [];
-    $stmt = $pdo->prepare("SELECT appointment_time FROM appointments WHERE appointment_date = ? AND doctor_id = ? AND status NOT IN ('cancelled')");
-    $stmt->execute([$date, $doctor_id]);
-    $booked = $stmt->fetchAll();
-    
-    foreach ($booked as $b) {
-        $bookedSlots[] = date('H:i:s', strtotime($b['appointment_time']));
+// EMAIL only validation (RFC 5322 simplified)
+function isValidEmail(string $email): bool {
+    return filter_var(trim($email), FILTER_VALIDATE_EMAIL) && strlen($email) <= 100;
+}
+
+// Uses EXACT ENUM values from shifacenter.sql: 'cancelled', 'no-show'
+function getAvailableTimeSlots(PDO $pdo, string $date, int $doctor_id): array {
+    try {
+        $stmt = $pdo->prepare("SELECT appointment_time FROM appointments WHERE appointment_date = ? AND doctor_id = ? AND status NOT IN ('cancelled', 'no-show')");
+        $stmt->execute([$date, $doctor_id]);
+        $booked = array_map(fn($t) => date('H:i:s', strtotime($t['appointment_time'])), $stmt->fetchAll());
+    } catch (PDOException $e) {
+        error_log('[BOT] getAvailableTimeSlots error: ' . $e->getMessage());
+        return [];
     }
     
-    $allSlots = [
-        '08:30:00' => '8:30 AM',
-        '09:00:00' => '9:00 AM',
-        '09:30:00' => '9:30 AM',
-        '10:00:00' => '10:00 AM',
-        '10:30:00' => '10:30 AM',
-        '11:00:00' => '11:00 AM',
-        '11:30:00' => '11:30 AM',
-        '12:00:00' => '12:00 PM',
-        '12:30:00' => '12:30 PM',
-        '13:00:00' => '1:00 PM',
-        '13:30:00' => '1:30 PM',
-        '14:00:00' => '2:00 PM',
-        '14:30:00' => '2:30 PM',
-        '15:00:00' => '3:00 PM',
-        '15:30:00' => '3:30 PM',
-        '16:00:00' => '4:00 PM',
-        '16:30:00' => '4:30 PM'
+    $all = [
+        '08:30:00'=>'8:30 AM','09:00:00'=>'9:00 AM','09:30:00'=>'9:30 AM','10:00:00'=>'10:00 AM',
+        '10:30:00'=>'10:30 AM','11:00:00'=>'11:00 AM','11:30:00'=>'11:30 AM','12:00:00'=>'12:00 PM',
+        '12:30:00'=>'12:30 PM','13:00:00'=>'1:00 PM','13:30:00'=>'1:30 PM','14:00:00'=>'2:00 PM',
+        '14:30:00'=>'2:30 PM','15:00:00'=>'3:00 PM','15:30:00'=>'3:30 PM','16:00:00'=>'4:00 PM','16:30:00'=>'4:30 PM'
     ];
-    
-    $available = [];
-    foreach ($allSlots as $time => $display) {
-        if (!in_array($time, $bookedSlots)) {
-            $available[] = ['time' => $time, 'display' => $display];
-        }
+    $avail = [];
+    foreach ($all as $t => $d) if (!in_array($t, $booked, true)) $avail[] = ['time' => $t, 'display' => $d];
+    return $avail;
+}
+
+function getDoctors(PDO $pdo): array {
+    try {
+        return $pdo->query("SELECT doctor_id, first_name, last_name, specialization FROM doctors ORDER BY specialization, last_name")->fetchAll();
+    } catch (PDOException $e) {
+        error_log('[BOT] getDoctors error: ' . $e->getMessage());
+        return [];
     }
-    return $available;
 }
 
-function getDoctors($pdo) {
-    $stmt = $pdo->query("SELECT doctor_id, first_name, last_name, specialization FROM doctors");
-    return $stmt->fetchAll();
+function getNextDays(int $n = 7): array {
+    $days = [];
+    for ($i = 1; $i <= $n; $i++) {
+        $dt = new DateTime("+$i days");
+        $days[] = ['value' => $dt->format('Y-m-d'), 'label' => $dt->format('D, M j')];
+    }
+    return $days;
 }
 
-if (isset($update['message'])) {
-    $message = $update['message'];
-    $chat_id = $message['chat']['id'];
-    $text = trim($message['text'] ?? '');
-    $telegram_user_id = $message['from']['id'];
+// ========== 4. MAIN MENU UI ==========
+function showMainMenu(int $cid, ?int $mid, string $tok, array $p, ?string $cust = null): bool {
+    $msg = $cust ?? "🏥 *Shifa Medical Center*\n\nHello, " . htmlspecialchars($p['first_name']) . "! 👋\n\nHow can we help you today?";
+    $kb = createInlineKeyboard([
+        [['text'=>'🏥 Book Appointment','callback_data'=>'menu:askappointment'], ['text'=>'📋 My Appointments','callback_data'=>'menu:appointments']],
+        [['text'=>'📅 Next Visit','callback_data'=>'menu:next'], ['text'=>'🎫 Queue Status','callback_data'=>'menu:queue']],
+        [['text'=>'👤 My Profile','callback_data'=>'menu:profile'], ['text'=>'❓ Help','callback_data'=>'menu:help']]
+    ]);
+    return sendOrEdit($cid, $mid, $msg, $tok, $kb);
+}
+
+// ========== 5. DISPLAY FUNCTIONS (Using EXACT schema columns) ==========
+function showAppointments(int $cid, ?int $mid, string $tok, PDO $pdo, array $p): void {
+    try {
+        $stmt = $pdo->prepare("SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name FROM appointments a JOIN doctors d ON a.doctor_id = d.doctor_id WHERE a.patient_id = ? ORDER BY a.appointment_date DESC, a.appointment_time DESC LIMIT 20");
+        $stmt->execute([$p['patient_id']]); 
+        $a = $stmt->fetchAll();
+    } catch (PDOException $e) {
+        error_log('[BOT] showAppointments error: ' . $e->getMessage());
+        sendOrEdit($cid, $mid, "❌ Error loading appointments.", $tok, createInlineKeyboard([[['text'=>'🏠 Menu','callback_data'=>'menu:home']]]));
+        return;
+    }
     
-    // Check if user is already linked
-    $stmt = $pdo->prepare("SELECT patient_id, first_name, last_name, email, phone, created_at FROM patients WHERE telegram_user_id = ?");
-    $stmt->execute([$telegram_user_id]);
-    $patient = $stmt->fetch();
+    $res = $a ? "📋 *Your Appointments*\n\n" : "📭 *No appointments yet*\n\nBook your first appointment below:";
+    foreach ($a as $x) {
+        $icon = in_array($x['status'], ['confirmed','completed']) ? '✅' : '⏳';
+        $res .= "{$icon} " . date('M j, Y', strtotime($x['appointment_date'])) . " • " . date('g:i A', strtotime($x['appointment_time'])) . "\n";
+        $res .= "   Dr. {$x['doctor_name']} | Queue #{$x['queue_number']}\n   Status: " . ucfirst($x['status']) . "\n\n";
+    }
+    $kb = createInlineKeyboard([[['text'=>'🏥 Book Now','callback_data'=>'menu:askappointment'], ['text'=>'🏠 Menu','callback_data'=>'menu:home']]]);
+    sendOrEdit($cid, $mid, $res, $tok, $kb);
+}
+
+function showNextAppointment(int $cid, ?int $mid, string $tok, PDO $pdo, array $p): void {
+    try {
+        $stmt = $pdo->prepare("SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name FROM appointments a JOIN doctors d ON a.doctor_id = d.doctor_id WHERE a.patient_id = ? AND a.appointment_date >= CURDATE() AND a.status = 'confirmed' ORDER BY a.appointment_date ASC, a.appointment_time ASC LIMIT 1");
+        $stmt->execute([$p['patient_id']]); 
+        $x = $stmt->fetch();
+    } catch (PDOException $e) {
+        error_log('[BOT] showNextAppointment error: ' . $e->getMessage());
+        sendOrEdit($cid, $mid, "❌ Error loading appointment.", $tok, createInlineKeyboard([[['text'=>'🏠 Menu','callback_data'=>'menu:home']]]));
+        return;
+    }
     
-    // Get session if exists
-    $session_stmt = $pdo->prepare("SELECT step, data_json FROM telegram_sessions WHERE telegram_user_id = ?");
-    $session_stmt->execute([$telegram_user_id]);
-    $session = $session_stmt->fetch();
+    $res = $x ? "📅 *Next Appointment*\n\n📆 " . date('l, F j, Y', strtotime($x['appointment_date'])) . "\n⏰ " . date('g:i A', strtotime($x['appointment_time'])) . "\n👨‍⚕️ Dr. {$x['doctor_name']}\n🎫 Queue #{$x['queue_number']}" : "❌ *No upcoming appointments*\n\nBook one now:";
+    $kb = createInlineKeyboard([[['text'=>'🏥 Book','callback_data'=>'menu:askappointment'], ['text'=>'📋 All','callback_data'=>'menu:appointments']]]);
+    sendOrEdit($cid, $mid, $res, $tok, $kb);
+}
+
+function showQueueStatus(int $cid, ?int $mid, string $tok, PDO $pdo, array $p): void {
+    try {
+        $stmt = $pdo->prepare("SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name, (SELECT COUNT(*) FROM appointments WHERE appointment_date = a.appointment_date AND appointment_time < a.appointment_time AND status IN ('scheduled','confirmed') AND doctor_id = a.doctor_id) as ahead FROM appointments a JOIN doctors d ON a.doctor_id = d.doctor_id WHERE a.patient_id = ? AND a.appointment_date = CURDATE() AND a.status IN ('scheduled','confirmed') ORDER BY a.appointment_time ASC LIMIT 1");
+        $stmt->execute([$p['patient_id']]); 
+        $x = $stmt->fetch();
+    } catch (PDOException $e) {
+        error_log('[BOT] showQueueStatus error: ' . $e->getMessage());
+        sendOrEdit($cid, $mid, "❌ Error loading queue.", $tok, createInlineKeyboard([[['text'=>'🏠 Menu','callback_data'=>'menu:home']]]));
+        return;
+    }
     
-    // ========== USER NOT LINKED ==========
+    if ($x) {
+        $ahead = (int)$x['ahead'];
+        $res = "🎫 *Your Queue*\n\n👨‍⚕️ Dr. {$x['doctor_name']}\n🎟️ #{$x['queue_number']}\n" . ($ahead===0 ? "🔔 *You're NEXT!*" : "⏱️ ~" . ($ahead*15) . " min wait");
+    } else {
+        $res = "🎫 *No queue today*\n\nCheck your appointments:";
+    }
+    $kb = createInlineKeyboard([[['text'=>'📋 View Appointments','callback_data'=>'menu:appointments']]]);
+    sendOrEdit($cid, $mid, $res, $tok, $kb);
+}
+
+function showProfile(int $cid, ?int $mid, string $tok, array $p): void {
+    try {
+        $dt = new DateTime($p['created_at']);
+        $res = "👤 *Profile*\n\nName: " . htmlspecialchars($p['first_name'].' '.$p['last_name']) . "\nEmail: " . htmlspecialchars($p['email']) . "\nMember since: " . $dt->format('F j, Y');
+        $kb = createInlineKeyboard([[['text'=>'🏠 Back to Menu','callback_data'=>'menu:home']]]);
+        sendOrEdit($cid, $mid, $res, $tok, $kb);
+    } catch (Exception $e) {
+        error_log('[BOT] showProfile error: ' . $e->getMessage());
+        sendOrEdit($cid, $mid, "❌ Error loading profile.", $tok, createInlineKeyboard([[['text'=>'🏠 Menu','callback_data'=>'menu:home']]]));
+    }
+}
+
+function showHelp(int $cid, ?int $mid, string $tok): void {
+    $res = "❓ *Quick Help*\n\n🏥 `/askappointment` — Book new\n📋 `/appointments` — View all\n📅 `/next` — Next appointment\n🎫 `/queue` — Check position\n👤 `/profile` — Your details\n\n💡 *Tip:* Use menu buttons below!";
+    $kb = createInlineKeyboard([[['text'=>'🏥 Book','callback_data'=>'menu:askappointment'], ['text'=>'📋 Appointments','callback_data'=>'menu:appointments'], ['text'=>'🎫 Queue','callback_data'=>'menu:queue']]]);
+    sendOrEdit($cid, $mid, $res, $tok, $kb);
+}
+
+// ========== 6. BOOKING FLOW WITH BUTTONS ==========
+function startBookingFlow(int $cid, ?int $mid, string $tok, PDO $pdo, int $uid): void {
+    $docs = getDoctors($pdo);
+    if (empty($docs)) {
+        sendOrEdit($cid, $mid, "❌ No doctors available.", $tok, createInlineKeyboard([[['text'=>'🏠 Main Menu','callback_data'=>'menu:home']]]));
+        return;
+    }
+    
+    $res = "🏥 *Book Appointment*\n\n*Step 1: Choose a doctor*:";
+    $btns = []; $row = [];
+    foreach ($docs as $d) {
+        $row[] = ['text'=>"👨‍⚕️ {$d['first_name']}", 'callback_data'=>"doctor:{$d['doctor_id']}"];
+        if (count($row) === 2) { $btns[] = $row; $row = []; }
+    }
+    if ($row) $btns[] = $row;
+    $btns[] = [['text'=>'🏠 Cancel','callback_data'=>'menu:home']];
+    
+    try {
+        // Uses UNIQUE KEY uk_telegram_user from your schema
+        $pdo->prepare("INSERT INTO telegram_sessions (telegram_user_id, step, data_json, updated_at) VALUES (?, 'booking_doctor', '{}', NOW()) ON DUPLICATE KEY UPDATE step='booking_doctor', data_json='{}', updated_at=NOW()")->execute([$uid]);
+    } catch (PDOException $e) {
+        error_log('[BOT] startBookingFlow session error: ' . $e->getMessage());
+        sendOrEdit($cid, $mid, "❌ Error starting booking. Please try again.", $tok, createInlineKeyboard([[['text'=>'🏠 Menu','callback_data'=>'menu:home']]]));
+        return;
+    }
+    
+    sendOrEdit($cid, $mid, $res, $tok, createInlineKeyboard($btns));
+}
+
+function handleDoctorSelection(int $did, int $cid, ?int $mid, string $tok, PDO $pdo, array $p, int $uid): void {
+    $docs = getDoctors($pdo); $sel = null;
+    foreach ($docs as $d) if ($d['doctor_id'] === $did) { $sel = $d; break; }
+    if (!$sel) {
+        sendOrEdit($cid, $mid, "❌ Doctor not found.", $tok, createInlineKeyboard([[['text'=>'🔙 Back','callback_data'=>'menu:askappointment']]]));
+        return;
+    }
+    
+    try {
+        $pdo->prepare("INSERT INTO telegram_sessions (telegram_user_id, step, data_json, updated_at) VALUES (?, 'booking_date', ?, NOW()) ON DUPLICATE KEY UPDATE step='booking_date', data_json=?, updated_at=NOW()")
+            ->execute([$uid, json_encode(['doctor_id'=>$sel['doctor_id'],'doctor_name'=>$sel['first_name'].' '.$sel['last_name']]), json_encode(['doctor_id'=>$sel['doctor_id'],'doctor_name'=>$sel['first_name'].' '.$sel['last_name']])]);
+    } catch (PDOException $e) {
+        error_log('[BOT] handleDoctorSelection session error: ' . $e->getMessage());
+        sendOrEdit($cid, $mid, "❌ Error saving selection.", $tok, createInlineKeyboard([[['text'=>'🏠 Menu','callback_data'=>'menu:home']]]));
+        return;
+    }
+    
+    $res = "✅ *Doctor:* Dr. {$sel['first_name']} {$sel['last_name']}\n\n*Step 2: Select date*\n\n📅 Tap below or type manually:";
+    
+    $btns = []; $row = [];
+    foreach (getNextDays(7) as $day) {
+        $row[] = ['text'=>$day['label'], 'callback_data'=>"date:{$day['value']}"];
+        if (count($row) === 2) { $btns[] = $row; $row = []; }
+    }
+    if ($row) $btns[] = $row;
+    $btns[] = [['text'=>'◀️ More','callback_data'=>'date:more'], ['text'=>'🔄 Cancel','callback_data'=>'booking:cancel']];
+    
+    sendOrEdit($cid, $mid, $res, $tok, createInlineKeyboard($btns));
+}
+
+function handleDateSelection(string $val, int $cid, ?int $mid, string $tok, PDO $pdo, array $p, int $uid, ?array $sess): void {
+    if (!$sess) { sendOrEdit($cid, $mid, "⚠️ Session expired.", $tok, createInlineKeyboard([[['text'=>'🏥 Book Again','callback_data'=>'menu:askappointment']]])); return; }
+    $d = json_decode($sess['data_json'] ?? '{}', true);
+    
+    if ($val === 'more') {
+        $btns = []; $row = [];
+        for ($i=8; $i<=14; $i++) {
+            $dt = new DateTime("+$i days");
+            $row[] = ['text'=>$dt->format('D, M j'), 'callback_data'=>"date:{$dt->format('Y-m-d')}"];
+            if (count($row) === 2) { $btns[] = $row; $row = []; }
+        }
+        if ($row) $btns[] = $row;
+        $btns[] = [['text'=>'🔙 Back','callback_data'=>'menu:askappointment']];
+        editMessageText($cid, $mid, "📅 *Select a date*\n\nChoose from below:", $tok, createInlineKeyboard($btns));
+        return;
+    }
+    
+    $obj = DateTime::createFromFormat('Y-m-d', $val); $tom = new DateTime('tomorrow');
+    if (!$obj || $obj < $tom) {
+        sendOrEdit($cid, $mid, "❌ Please select a future date.", $tok, createInlineKeyboard([[['text'=>'📅 Try Again','callback_data'=>'booking:date']]]));
+        return;
+    }
+    
+    $d['date'] = $obj->format('Y-m-d'); $d['display_date'] = $obj->format('l, F j, Y');
+    $slots = getAvailableTimeSlots($pdo, $d['date'], $d['doctor_id']);
+    
+    if (empty($slots)) {
+        sendOrEdit($cid, $mid, "❌ No slots on *{$d['display_date']}*", $tok, createInlineKeyboard([[['text'=>'📅 Pick Another','callback_data'=>'date:more']],[['text'=>'🔄 Cancel','callback_data'=>'booking:cancel']]]));
+        return;
+    }
+    
+    $d['available_slots'] = $slots;
+    try {
+        $pdo->prepare("INSERT INTO telegram_sessions (telegram_user_id, step, data_json, updated_at) VALUES (?, 'booking_time', ?, NOW()) ON DUPLICATE KEY UPDATE step='booking_time', data_json=?, updated_at=NOW()")
+            ->execute([$uid, json_encode($d), json_encode($d)]);
+    } catch (PDOException $e) {
+        error_log('[BOT] handleDateSelection session error: ' . $e->getMessage());
+        sendOrEdit($cid, $mid, "❌ Error saving date.", $tok, createInlineKeyboard([[['text'=>'🏠 Menu','callback_data'=>'menu:home']]]));
+        return;
+    }
+    
+    $res = "📅 *{$d['display_date']}*\n\n⏰ *Select time slot*:";
+    $btns = []; $row = [];
+    foreach ($slots as $s) {
+        $row[] = ['text'=>$s['display'], 'callback_data'=>"time:{$s['time']}"];
+        if (count($row) === 3) { $btns[] = $row; $row = []; }
+    }
+    if ($row) $btns[] = $row;
+    $btns[] = [['text'=>'🔙 Change Date','callback_data'=>'booking:date'], ['text'=>'🔄 Cancel','callback_data'=>'booking:cancel']];
+    
+    sendOrEdit($cid, $mid, $res, $tok, createInlineKeyboard($btns));
+}
+
+function handleTimeSelection(string $val, int $cid, ?int $mid, string $tok, PDO $pdo, array $p, int $uid, ?array $sess): void {
+    if (!$sess) { sendOrEdit($cid, $mid, "⚠️ Session expired.", $tok, createInlineKeyboard([[['text'=>'🏥 Book Again','callback_data'=>'menu:askappointment']]])); return; }
+    $d = json_decode($sess['data_json'] ?? '{}', true); $slots = $d['available_slots'] ?? [];
+    
+    $sel = null; foreach ($slots as $s) if ($s['time'] === $val) { $sel = $s; break; }
+    if (!$sel) { sendOrEdit($cid, $mid, "❌ Invalid time.", $tok, createInlineKeyboard([[['text'=>'⏰ Try Again','callback_data'=>'booking:time']]])); return; }
+    
+    try {
+        $check = $pdo->prepare("SELECT appointment_id FROM appointments WHERE appointment_date=? AND appointment_time=? AND doctor_id=? AND status NOT IN ('cancelled','no-show') LIMIT 1");
+        $check->execute([$d['date'], $sel['time'], $d['doctor_id']]);
+        if ($check->rowCount() > 0) {
+            sendOrEdit($cid, $mid, "❌ Slot just taken!", $tok, createInlineKeyboard([[['text'=>'🏥 Start Over','callback_data'=>'menu:askappointment']]]));
+            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id=?")->execute([$uid]);
+            return;
+        }
+    } catch (PDOException $e) {
+        error_log('[BOT] handleTimeSelection availability check error: ' . $e->getMessage());
+        sendOrEdit($cid, $mid, "❌ Error checking availability.", $tok, createInlineKeyboard([[['text'=>'🏠 Menu','callback_data'=>'menu:home']]]));
+        return;
+    }
+    
+    $d['time'] = $sel['time']; $d['display_time'] = $sel['display']; unset($d['available_slots']);
+    try {
+        $pdo->prepare("INSERT INTO telegram_sessions (telegram_user_id, step, data_json, updated_at) VALUES (?, 'booking_confirm', ?, NOW()) ON DUPLICATE KEY UPDATE step='booking_confirm', data_json=?, updated_at=NOW()")
+            ->execute([$uid, json_encode($d), json_encode($d)]);
+    } catch (PDOException $e) {
+        error_log('[BOT] handleTimeSelection session error: ' . $e->getMessage());
+        sendOrEdit($cid, $mid, "❌ Error saving time.", $tok, createInlineKeyboard([[['text'=>'🏠 Menu','callback_data'=>'menu:home']]]));
+        return;
+    }
+    
+    $res = "⏰ *{$sel['display']}*\n\n*✅ Confirm Appointment*\n\n📋 *Details:*\n👨‍⚕️ Dr. {$d['doctor_name']}\n📆 {$d['display_date']}\n⏰ {$sel['display']}\n\nTap to confirm:";
+    sendOrEdit($cid, $mid, $res, $tok, createInlineKeyboard([
+        [['text'=>'✅ Confirm','callback_data'=>'confirm:book'], ['text'=>'❌ Cancel','callback_data'=>'booking:cancel']],
+        [['text'=>'🔄 Change Time','callback_data'=>'booking:time'], ['text'=>'📅 Change Date','callback_data'=>'booking:date']]
+    ]));
+}
+
+function handleBookingConfirmation(int $cid, ?int $mid, string $tok, PDO $pdo, array $p, int $uid, ?array $sess): void {
+    if (!$sess) { sendOrEdit($cid, $mid, "⚠️ Session expired.", $tok, createInlineKeyboard([[['text'=>'🏥 Book Again','callback_data'=>'menu:askappointment']]])); return; }
+    $d = json_decode($sess['data_json'] ?? '{}', true);
+    
+    try {
+        $check = $pdo->prepare("SELECT appointment_id FROM appointments WHERE appointment_date=? AND appointment_time=? AND doctor_id=? AND status NOT IN ('cancelled','no-show') LIMIT 1 FOR UPDATE");
+        $check->execute([$d['date'], $d['time'], $d['doctor_id']]);
+        if ($check->rowCount() > 0) {
+            sendOrEdit($cid, $mid, "❌ Slot no longer available.", $tok, createInlineKeyboard([[['text'=>'🔄 Try Again','callback_data'=>'menu:askappointment']]]));
+            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id=?")->execute([$uid]);
+            return;
+        }
+    } catch (PDOException $e) {
+        error_log('[BOT] handleBookingConfirmation availability error: ' . $e->getMessage());
+        sendOrEdit($cid, $mid, "❌ Error checking slot.", $tok, createInlineKeyboard([[['text'=>'🏠 Menu','callback_data'=>'menu:home']]]));
+        return;
+    }
+    
+    try {
+        $pdo->beginTransaction();
+        
+        $q = $pdo->prepare("SELECT COUNT(*)+1 FROM appointments WHERE appointment_date=? AND appointment_time<? AND doctor_id=? AND status IN ('scheduled','confirmed')");
+        $q->execute([$d['date'], $d['time'], $d['doctor_id']]);
+        $qnum = (int)$q->fetchColumn();
+        
+        // Insert using EXACT columns from your appointments table
+        $pdo->prepare("INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, queue_number, status, send_sms, created_at) VALUES (?, ?, ?, ?, ?, 'scheduled', 1, NOW())")
+            ->execute([$p['patient_id'], $d['doctor_id'], $d['date'], $d['time'], $qnum]);
+        
+        $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id=?")->execute([$uid]);
+        $pdo->commit();
+        
+        $res = "✅ *Appointment Booked!*\n\n📋 *Details:*\n👨‍⚕️ Dr. {$d['doctor_name']}\n📆 {$d['display_date']}\n⏰ {$d['display_time']}\n🎫 Queue #{$qnum}\n\n📌 Arrive 10 min early. Reminder sent via cron job at 7 AM.";
+        sendOrEdit($cid, $mid, $res, $tok, createInlineKeyboard([[['text'=>'📋 My Appointments','callback_data'=>'menu:appointments'], ['text'=>'🏠 Menu','callback_data'=>'menu:home']]]));
+        
+    } catch (PDOException $e) {
+        $pdo->rollBack();
+        error_log('[BOT] Booking transaction failed: '.$e->getMessage());
+        sendOrEdit($cid, $mid, "❌ Booking failed. Please retry.", $tok, createInlineKeyboard([[['text'=>'🔄 Retry','callback_data'=>'menu:askappointment'], ['text'=>'🏠 Menu','callback_data'=>'menu:home']]]));
+    }
+}
+
+// ========== 7. MAIN REQUEST HANDLER ==========
+$content = file_get_contents('php://input');
+$update = json_decode($content, true);
+if (!$update) { http_response_code(400); exit('Invalid request'); }
+if (!isset($update['message']) && !isset($update['callback_query'])) { http_response_code(200); exit(); }
+
+$is_cb = isset($update['callback_query']);
+$src = $is_cb ? $update['callback_query'] : ($update['message'] ?? null);
+if (!$src) { http_response_code(200); exit(); }
+
+$cid = (int)$src['chat']['id'];
+$uid = (int)$src['from']['id'];
+$mid = (int)($src['message_id'] ?? 0);
+$txt = trim($src['text'] ?? $src['data'] ?? '');
+
+// Fetch patient using EXACT columns from patients table
+try {
+    $pat = $pdo->prepare("SELECT patient_id, first_name, last_name, email, created_at FROM patients WHERE telegram_user_id=? LIMIT 1");
+    $pat->execute([$uid]); 
+    $patient = $pat->fetch();
+} catch (PDOException $e) {
+    error_log('[BOT] Patient lookup error: ' . $e->getMessage());
+    http_response_code(500);
+    exit('Database error');
+}
+
+// Fetch session using EXACT columns from telegram_sessions
+try {
+    $sess_stmt = $pdo->prepare("SELECT step, data_json, updated_at FROM telegram_sessions WHERE telegram_user_id=? LIMIT 1");
+    $sess_stmt->execute([$uid]); 
+    $session = $sess_stmt->fetch();
+} catch (PDOException $e) {
+    error_log('[BOT] Session lookup error: ' . $e->getMessage());
+    $session = null;
+}
+
+// ========== CALLBACK ROUTER (Button clicks) ==========
+if ($is_cb) {
+    answerCallback($update['callback_query']['id'], $bot_token);
+    
     if (!$patient) {
-        if ($text == '/start') {
-            $pdo->prepare("REPLACE INTO telegram_sessions (telegram_user_id, step, data_json, updated_at) VALUES (?, 'waiting_email', NULL, NOW())")->execute([$telegram_user_id]);
-            
-            $response = "🏥 *Welcome to Shifa Medical Center Bot!*\n\n";
-            $response .= "To link your account, please enter your registered email address or phone number.\n\n";
-            $response .= "*Example:* `lana@gmail.com` or `0556431565`\n\n";
-            $response .= "This will instantly link your Telegram account.";
-            sendMessage($chat_id, $response, $bot_token);
-        }
-        elseif ($session && $session['step'] == 'waiting_email') {
-            $input = trim($text);
-            
-            $stmt = $pdo->prepare("SELECT patient_id, first_name, last_name, email, phone, created_at FROM patients WHERE email = ? OR phone = ?");
-            $stmt->execute([$input, $input]);
-            $found = $stmt->fetch();
-            
-            if ($found) {
-                $pdo->prepare("UPDATE patients SET telegram_user_id = ?, telegram_linked_at = NOW() WHERE patient_id = ?")->execute([$telegram_user_id, $found['patient_id']]);
-                $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
-                
-                $response = "✅ *Account Linked Successfully!*\n\n";
-                $response .= "Welcome {$found['first_name']} {$found['last_name']}!\n\n";
-                $response .= "*Available Commands:*\n";
-                $response .= "• `/appointments` - View your appointments\n";
-                $response .= "• `/next` - Your next appointment\n";
-                $response .= "• `/queue` - Check queue position\n";
-                $response .= "• `/profile` - View your profile\n";
-                $response .= "• `/askappointment` - Book an appointment\n";
-                $response .= "• `/help` - Show all commands\n\n";
-                $response .= "You will automatically receive appointment reminders.";
-                sendMessage($chat_id, $response, $bot_token);
-            } else {
-                sendMessage($chat_id, "❌ *Account not found*\n\nNo patient found with: `{$input}`\n\nType /start to try again.", $bot_token);
-                $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
-            }
-        }
-        else {
-            sendMessage($chat_id, "👋 *Welcome!*\n\nType /start to link your account.", $bot_token);
-        }
-        exit();
+        editMessageText($cid, $mid, "⚠️ Session expired. Type /start to link.", $bot_token);
+        http_response_code(200); exit();
     }
     
-    // ========== USER IS LINKED ==========
+    $cb = $update['callback_query']['data'] ?? '';
     
-    // Check if in booking flow
-    if ($session && $session['step'] == 'booking_doctor') {
-        $data = json_decode($session['data_json'], true);
+    // Main menu buttons -> trigger existing commands
+    if (str_starts_with($cb, 'menu:')) {
+        $cmd = substr($cb, 5);
+        $handlers = [
+            'home' => fn() => showMainMenu($cid, $mid, $bot_token, $patient),
+            'start' => fn() => showMainMenu($cid, $mid, $bot_token, $patient),
+            'appointments' => fn() => showAppointments($cid, $mid, $bot_token, $pdo, $patient),
+            'next' => fn() => showNextAppointment($cid, $mid, $bot_token, $pdo, $patient),
+            'queue' => fn() => showQueueStatus($cid, $mid, $bot_token, $pdo, $patient),
+            'profile' => fn() => showProfile($cid, $mid, $bot_token, $patient),
+            'askappointment' => fn() => startBookingFlow($cid, $mid, $bot_token, $pdo, $uid),
+            'help' => fn() => showHelp($cid, $mid, $bot_token)
+        ];
+        if (isset($handlers[$cmd])) {
+            $handlers[$cmd]();
+            http_response_code(200); exit();
+        }
+    }
+    
+    // Booking flow buttons
+    match(true) {
+        str_starts_with($cb, 'doctor:') => handleDoctorSelection((int)substr($cb,7), $cid, $mid, $bot_token, $pdo, $patient, $uid),
+        str_starts_with($cb, 'date:') => handleDateSelection(substr($cb,5), $cid, $mid, $bot_token, $pdo, $patient, $uid, $session),
+        str_starts_with($cb, 'time:') => handleTimeSelection(substr($cb,5), $cid, $mid, $bot_token, $pdo, $patient, $uid, $session),
+        $cb === 'confirm:book' => handleBookingConfirmation($cid, $mid, $bot_token, $pdo, $patient, $uid, $session),
+        $cb === 'booking:cancel' => ($pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id=?")->execute([$uid]), showMainMenu($cid, $mid, $bot_token, $patient, "❌ Booking cancelled")),
+        default => editMessageText($cid, $mid, "⚠️ Invalid action.", $bot_token)
+    };
+    
+    http_response_code(200); exit();
+}
+
+// ========== MESSAGE HANDLER (Text commands) ==========
+
+// UNLINKED USER - EMAIL ONLY LOOKUP
+if (!$patient) {
+    if ($txt === '/start') {
+        try {
+            $pdo->prepare("INSERT INTO telegram_sessions (telegram_user_id, step, data_json, updated_at) VALUES (?, 'waiting_email', NULL, NOW()) ON DUPLICATE KEY UPDATE step='waiting_email', data_json=NULL, updated_at=NOW()")->execute([$uid]);
+        } catch (PDOException $e) {
+            error_log('[BOT] Session insert error: ' . $e->getMessage());
+            sendMessage($cid, "❌ Error. Please try again.", $bot_token);
+            exit();
+        }
+        $res = "🏥 *Welcome to Shifa Medical Center*\n\nLink your account to book appointments.\n\n*Enter your registered email address:*";
+        sendMessage($cid, $res, $bot_token);
         
-        if (is_numeric($text)) {
-            $doctor_choice = (int)$text;
-            $doctors = getDoctors($pdo);
-            
-            if ($doctor_choice >= 1 && $doctor_choice <= count($doctors)) {
-                $selected_doctor = $doctors[$doctor_choice - 1];
-                
-                $pdo->prepare("UPDATE telegram_sessions SET step = 'booking_date', data_json = ? WHERE telegram_user_id = ?")
-                    ->execute([json_encode(['doctor_id' => $selected_doctor['doctor_id'], 'doctor_name' => $selected_doctor['first_name'] . ' ' . $selected_doctor['last_name']]), $telegram_user_id]);
-                
-                $response = "✅ *Doctor selected:* Dr. {$selected_doctor['first_name']} {$selected_doctor['last_name']}\n\n";
-                $response .= "*Step 2: Select a date*\n\n";
-                $response .= "Please enter the appointment date in any of these formats:\n";
-                $response .= "• `YYYY-MM-DD` (example: 2026-04-25)\n";
-                $response .= "• `DD-MM-YYYY` (example: 25-04-2026)\n";
-                $response .= "• `DD/MM/YYYY` (example: 25/04/2026)\n\n";
-                $response .= "⚠️ Date must be at least tomorrow.";
-                sendMessage($chat_id, $response, $bot_token);
-            } else {
-                sendMessage($chat_id, "❌ Invalid choice. Please enter a number from the list.", $bot_token);
+    } elseif ($session && $session['step'] === 'waiting_email') {
+        $email = trim($txt);
+        
+        // EMAIL ONLY validation
+        if (!isValidEmail($email)) {
+            sendMessage($cid, "❌ Invalid email format. Please enter a valid email address.", $bot_token); 
+            exit();
+        }
+        
+        try {
+            // Lookup by EMAIL only (using your UNIQUE email constraint)
+            $f = $pdo->prepare("SELECT patient_id, first_name, last_name, email FROM patients WHERE email=? LIMIT 1");
+            $f->execute([$email]); 
+            $found = $f->fetch();
+        } catch (PDOException $e) {
+            error_log('[BOT] Patient search error: ' . $e->getMessage());
+            sendMessage($cid, "❌ Database error. Please try again.", $bot_token);
+            exit();
+        }
+        
+        if ($found) {
+            try {
+                $pdo->beginTransaction();
+                // Update using EXACT columns: telegram_user_id, telegram_linked_at
+                $pdo->prepare("UPDATE patients SET telegram_user_id=?, telegram_linked_at=NOW() WHERE patient_id=?")->execute([$uid, $found['patient_id']]);
+                $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id=?")->execute([$uid]);
+                $pdo->commit();
+                showMainMenu($cid, null, $bot_token, $found, "✅ *Linked Successfully!*\n\nWelcome, {$found['first_name']}! 👋");
+            } catch (PDOException $e) {
+                $pdo->rollBack();
+                error_log('[BOT] Link transaction failed: ' . $e->getMessage());
+                sendMessage($cid, "❌ Link failed. Please try again.", $bot_token);
             }
         } else {
-            sendMessage($chat_id, "❌ Please enter the number of your chosen doctor.", $bot_token);
+            sendMessage($cid, "❌ *Account not found*\n\nNo patient registered with email: `{$email}`\n\nPlease check and try again.", $bot_token);
+            try { $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id=?")->execute([$uid]); } catch (PDOException $e) {}
         }
-        exit();
+    } else {
+        sendMessage($cid, "👋 *Welcome!*\n\nType /start to link your account with your email.", $bot_token);
     }
+    exit();
+}
+
+// LINKED USER - COMMAND ROUTER
+$cmd_handlers = [
+    '/start' => fn() => showMainMenu($cid, null, $bot_token, $patient),
+    '/menu' => fn() => showMainMenu($cid, null, $bot_token, $patient),
+    '/appointments' => fn() => showAppointments($cid, null, $bot_token, $pdo, $patient),
+    '/next' => fn() => showNextAppointment($cid, null, $bot_token, $pdo, $patient),
+    '/queue' => fn() => showQueueStatus($cid, null, $bot_token, $pdo, $patient),
+    '/profile' => fn() => showProfile($cid, null, $bot_token, $patient),
+    '/askappointment' => fn() => startBookingFlow($cid, null, $bot_token, $pdo, $uid),
+    '/help' => fn() => showHelp($cid, null, $bot_token)
+];
+
+if (isset($cmd_handlers[$txt])) {
+    $cmd_handlers[$txt]();
+    exit();
+}
+
+// BOOKING FLOW TEXT FALLBACKS
+if ($session) {
+    $sd = json_decode($session['data_json'] ?? '{}', true);
     
-    if ($session && $session['step'] == 'booking_date') {
-        $data = json_decode($session['data_json'], true);
-        $dateObj = parseDateInput($text);
-        $tomorrow = new DateTime('tomorrow');
-        
-        if ($dateObj && $dateObj >= $tomorrow) {
-            $selected_date = $dateObj->format('Y-m-d');
-            $display_date = $dateObj->format('l, F j, Y');
-            
-            $data['date'] = $selected_date;
-            $data['display_date'] = $display_date;
-            
-            $availableSlots = getAvailableTimeSlots($pdo, $selected_date, $data['doctor_id']);
-            
-            if (empty($availableSlots)) {
-                sendMessage($chat_id, "❌ No available slots on " . $display_date . ". Please choose another date.\n\nType a new date or 'cancel' to cancel.", $bot_token);
-                $pdo->prepare("UPDATE telegram_sessions SET step = 'booking_date', data_json = ? WHERE telegram_user_id = ?")->execute([json_encode($data), $telegram_user_id]);
-                exit();
-            }
-            
-            $data['available_slots'] = $availableSlots;
-            $pdo->prepare("UPDATE telegram_sessions SET step = 'booking_time', data_json = ? WHERE telegram_user_id = ?")->execute([json_encode($data), $telegram_user_id]);
-            
-            $response = "📅 *Date selected:* {$display_date}\n\n";
-            $response .= "*Step 3: Select a time*\n\n";
-            $response .= "Available time slots:\n";
-            
-            $slot_num = 1;
-            foreach ($availableSlots as $slot) {
-                $response .= "{$slot_num}. {$slot['display']}\n";
-                $slot_num++;
-            }
-            $response .= "\nPlease enter the number of your preferred time slot.";
-            
-            sendMessage($chat_id, $response, $bot_token);
-        } 
-        elseif ($text == 'cancel') {
-            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
-            sendMessage($chat_id, "❌ Booking cancelled. Type /askappointment to start over.", $bot_token);
-        }
-        else {
-            sendMessage($chat_id, "❌ Invalid date format or date is in the past.\n\nPlease use:\n• `YYYY-MM-DD`\n• `DD-MM-YYYY`\n• `DD/MM/YYYY`\n\nDate must be at least tomorrow.", $bot_token);
-        }
-        exit();
+    if ($session['step']==='booking_doctor' && is_numeric($txt) && (int)$txt>0) {
+        $docs = getDoctors($pdo); $c = (int)$txt;
+        if ($c <= count($docs)) { handleDoctorSelection($docs[$c-1]['doctor_id'], $cid, $mid, $bot_token, $pdo, $patient, $uid); exit(); }
     }
-    
-    if ($session && $session['step'] == 'booking_time') {
-        $data = json_decode($session['data_json'], true);
-        $availableSlots = $data['available_slots'];
-        
-        if (is_numeric($text) && $text >= 1 && $text <= count($availableSlots)) {
-            $selected_slot = $availableSlots[$text - 1];
-            
-            $check = $pdo->prepare("SELECT appointment_id FROM appointments WHERE appointment_date = ? AND appointment_time = ? AND doctor_id = ? AND status NOT IN ('cancelled')");
-            $check->execute([$data['date'], $selected_slot['time'], $data['doctor_id']]);
-            
-            if ($check->rowCount() > 0) {
-                sendMessage($chat_id, "❌ Sorry, that time slot was just taken. Please restart booking with /askappointment.", $bot_token);
-                $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
-                exit();
-            }
-            
-            $data['time'] = $selected_slot['time'];
-            $data['display_time'] = $selected_slot['display'];
-            unset($data['available_slots']);
-            
-            $pdo->prepare("UPDATE telegram_sessions SET step = 'booking_confirm', data_json = ? WHERE telegram_user_id = ?")->execute([json_encode($data), $telegram_user_id]);
-            
-            $response = "⏰ *Time selected:* {$data['display_time']}\n\n";
-            $response .= "*Step 4: Confirm your appointment*\n\n";
-            $response .= "📋 *Appointment Details:*\n";
-            $response .= "👨‍⚕️ Doctor: Dr. {$data['doctor_name']}\n";
-            $response .= "📆 Date: {$data['display_date']}\n";
-            $response .= "⏰ Time: {$data['display_time']}\n\n";
-            $response .= "✅ Type `confirm` to book this appointment\n";
-            $response .= "❌ Type `cancel` to cancel\n";
-            $response .= "🔄 Type a new date (DD-MM-YYYY) to change the date";
-            sendMessage($chat_id, $response, $bot_token);
+    elseif ($session['step']==='booking_date') {
+        if (strtolower($txt)==='cancel') { 
+            try { $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id=?")->execute([$uid]); } catch (PDOException $e) {}
+            showMainMenu($cid, null, $bot_token, $patient, "❌ Cancelled"); exit(); 
         }
-        elseif ($text == 'cancel') {
-            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
-            sendMessage($chat_id, "❌ Booking cancelled. Type /askappointment to start over.", $bot_token);
-        }
-        else {
-            sendMessage($chat_id, "❌ Invalid choice. Please enter the number from the list.", $bot_token);
-        }
-        exit();
+        $obj = parseDateInput($txt); $tom = new DateTime('tomorrow');
+        if ($obj && $obj >= $tom) { handleDateSelection($obj->format('Y-m-d'), $cid, $mid, $bot_token, $pdo, $patient, $uid, $session); exit(); }
     }
-    
-    if ($session && $session['step'] == 'booking_confirm') {
-        $data = json_decode($session['data_json'], true);
-        
-        if (strtolower($text) == 'confirm') {
-            $check = $pdo->prepare("SELECT appointment_id FROM appointments WHERE appointment_date = ? AND appointment_time = ? AND doctor_id = ? AND status NOT IN ('cancelled')");
-            $check->execute([$data['date'], $data['time'], $data['doctor_id']]);
-            
-            if ($check->rowCount() > 0) {
-                sendMessage($chat_id, "❌ Sorry, this slot is no longer available. Please start over with /askappointment.", $bot_token);
-                $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
-                exit();
-            }
-            
-            $queue_stmt = $pdo->prepare("SELECT COUNT(*) + 1 as next_queue FROM appointments WHERE appointment_date = ? AND appointment_time < ?");
-            $queue_stmt->execute([$data['date'], $data['time']]);
-            $queueNum = $queue_stmt->fetchColumn();
-            
-            $insert = $pdo->prepare("INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, queue_number, status, send_sms, created_at) VALUES (?, ?, ?, ?, ?, 'scheduled', 1, NOW())");
-            $insert->execute([$patient['patient_id'], $data['doctor_id'], $data['date'], $data['time'], $queueNum]);
-            
-            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
-            
-            $response = "✅ *Appointment Booked Successfully!*\n\n";
-            $response .= "📋 *Appointment Details:*\n";
-            $response .= "👨‍⚕️ Doctor: Dr. {$data['doctor_name']}\n";
-            $response .= "📆 Date: {$data['display_date']}\n";
-            $response .= "⏰ Time: {$data['display_time']}\n";
-            $response .= "🎫 Queue Number: {$queueNum}\n\n";
-            $response .= "📌 Please arrive 10 minutes before your appointment time.\n";
-            $response .= "You will receive a reminder before your appointment.\n\n";
-            $response .= "Use `/appointments` to view all your appointments or `/next` to see your next one.";
-            sendMessage($chat_id, $response, $bot_token);
-        }
-        elseif (strtolower($text) == 'cancel') {
-            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
-            sendMessage($chat_id, "❌ Booking cancelled. Type /askappointment to start over.", $bot_token);
-        }
-        else {
-            $newDate = parseDateInput($text);
-            $tomorrow = new DateTime('tomorrow');
-            
-            if ($newDate && $newDate >= $tomorrow) {
-                $data['date'] = $newDate->format('Y-m-d');
-                $data['display_date'] = $newDate->format('l, F j, Y');
-                unset($data['time'], $data['display_time']);
-                
-                $availableSlots = getAvailableTimeSlots($pdo, $data['date'], $data['doctor_id']);
-                
-                if (empty($availableSlots)) {
-                    sendMessage($chat_id, "❌ No available slots on {$data['display_date']}. Please try another date or type 'cancel'.", $bot_token);
-                    exit();
-                }
-                
-                $data['available_slots'] = $availableSlots;
-                $pdo->prepare("UPDATE telegram_sessions SET step = 'booking_time', data_json = ? WHERE telegram_user_id = ?")->execute([json_encode($data), $telegram_user_id]);
-                
-                $response = "🔄 *Date changed to:* {$data['display_date']}\n\n";
-                $response .= "*Available time slots:*\n";
-                $slot_num = 1;
-                foreach ($availableSlots as $slot) {
-                    $response .= "{$slot_num}. {$slot['display']}\n";
-                    $slot_num++;
-                }
-                $response .= "\nPlease enter the number of your preferred time slot.";
-                sendMessage($chat_id, $response, $bot_token);
-            } else {
-                sendMessage($chat_id, "❌ Invalid option. Type `confirm` to book, `cancel` to cancel, or enter a new date (DD-MM-YYYY).", $bot_token);
-            }
-        }
-        exit();
+    elseif ($session['step']==='booking_time' && is_numeric($txt)) {
+        $slots = $sd['available_slots'] ?? []; $c = (int)$txt;
+        if ($c>0 && $c<=count($slots)) { handleTimeSelection($slots[$c-1]['time'], $cid, $mid, $bot_token, $pdo, $patient, $uid, $session); exit(); }
     }
-    
-    // ========== REGULAR COMMANDS ==========
-    
-    if ($text == '/appointments') {
-        $stmt = $pdo->prepare("
-            SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
-            FROM appointments a
-            JOIN doctors d ON a.doctor_id = d.doctor_id
-            WHERE a.patient_id = ?
-            ORDER BY a.appointment_date DESC, a.appointment_time DESC
-        ");
-        $stmt->execute([$patient['patient_id']]);
-        $appointments = $stmt->fetchAll();
-        
-        if (count($appointments) > 0) {
-            $response = "📋 *Your Appointments*\n\n";
-            foreach ($appointments as $apt) {
-                $statusIcon = ($apt['status'] == 'confirmed') ? '✅' : '⏳';
-                $response .= "{$statusIcon} " . date('M j, Y', strtotime($apt['appointment_date'])) . " - " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
-                $response .= "   Dr. {$apt['doctor_name']} | Queue #{$apt['queue_number']}\n";
-                $response .= "   Status: " . ucfirst($apt['status']) . "\n\n";
-            }
-            $response .= "To book a new appointment, use `/askappointment`.";
-            sendMessage($chat_id, $response, $bot_token);
-        } else {
-            sendMessage($chat_id, "📭 *No appointments found*\n\nUse `/askappointment` to book your first appointment.", $bot_token);
+    elseif ($session['step']==='booking_confirm') {
+        if (strtolower($txt)==='confirm') { handleBookingConfirmation($cid, $mid, $bot_token, $pdo, $patient, $uid, $session); exit(); }
+        elseif (strtolower($txt)==='cancel') { 
+            try { $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id=?")->execute([$uid]); } catch (PDOException $e) {}
+            showMainMenu($cid, null, $bot_token, $patient, "❌ Cancelled"); exit(); 
         }
-    }
-    
-    elseif ($text == '/next') {
-        $stmt = $pdo->prepare("
-            SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
-            FROM appointments a
-            JOIN doctors d ON a.doctor_id = d.doctor_id
-            WHERE a.patient_id = ? 
-            AND a.appointment_date >= CURDATE()
-            AND a.status = 'confirmed'
-            ORDER BY a.appointment_date ASC, a.appointment_time ASC
-            LIMIT 1
-        ");
-        $stmt->execute([$patient['patient_id']]);
-        $apt = $stmt->fetch();
-        
-        if ($apt) {
-            $response = "📅 *Your Next Appointment*\n\n";
-            $response .= "📆 Date: " . date('l, F j, Y', strtotime($apt['appointment_date'])) . "\n";
-            $response .= "⏰ Time: " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
-            $response .= "👨‍⚕️ Doctor: Dr. {$apt['doctor_name']}\n";
-            $response .= "🎫 Queue #: {$apt['queue_number']}\n";
-            $response .= "📌 Status: " . ucfirst($apt['status']) . "\n\n";
-            $response .= "Please arrive 10 minutes early!";
-            sendMessage($chat_id, $response, $bot_token);
-        } else {
-            sendMessage($chat_id, "❌ *No confirmed appointments found*\n\nYour appointments may be pending confirmation by the nurse, or you have no upcoming appointments.\n\nUse `/appointments` to check your requests.", $bot_token);
-        }
-    }
-    
-    elseif ($text == '/queue') {
-        $stmt = $pdo->prepare("
-            SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name,
-                (SELECT COUNT(*) FROM appointments 
-                 WHERE appointment_date = a.appointment_date 
-                 AND appointment_time < a.appointment_time 
-                 AND status IN ('scheduled', 'confirmed')
-                 AND doctor_id = a.doctor_id) as people_ahead,
-                (SELECT COUNT(*) FROM appointments 
-                 WHERE appointment_date = a.appointment_date 
-                 AND status IN ('scheduled', 'confirmed')
-                 AND doctor_id = a.doctor_id) as total_waiting
-            FROM appointments a
-            JOIN doctors d ON a.doctor_id = d.doctor_id
-            WHERE a.patient_id = ? 
-            AND a.appointment_date = CURDATE()
-            AND a.status IN ('scheduled', 'confirmed')
-            ORDER BY a.appointment_time ASC
-            LIMIT 1
-        ");
-        $stmt->execute([$patient['patient_id']]);
-        $apt = $stmt->fetch();
-        
-        if ($apt) {
-            $peopleAhead = $apt['people_ahead'];
-            $totalWaiting = $apt['total_waiting'];
-            $position = $peopleAhead + 1;
-            
-            $response = "🎫 *Queue Information*\n\n";
-            $response .= "👨‍⚕️ Doctor: Dr. {$apt['doctor_name']}\n";
-            $response .= "🎟️ Your Queue #: {$apt['queue_number']}\n";
-            $response .= "📊 Position: {$position} of {$totalWaiting} waiting\n";
-            $response .= "👥 People ahead: {$peopleAhead}\n\n";
-            
-            if ($peopleAhead == 0) {
-                $response .= "🔔 *You're NEXT!* Please be ready when called.";
-            } else {
-                $waitTime = $peopleAhead * 15;
-                $response .= "⏱️ Estimated wait: ~{$waitTime} minutes";
-            }
-            sendMessage($chat_id, $response, $bot_token);
-        } else {
-            sendMessage($chat_id, "🎫 *No Active Queue*\n\nYou don't have any confirmed appointments scheduled for today.\n\nCheck `/appointments` to see pending requests.\nSend `/next` to see your next confirmed appointment.", $bot_token);
-        }
-    }
-    
-    elseif ($text == '/profile') {
-        $memberDate = new DateTime($patient['created_at']);
-        $response = "👤 *Your Profile*\n\n";
-        $response .= "Name: {$patient['first_name']} {$patient['last_name']}\n";
-        $response .= "Email: {$patient['email']}\n";
-        $response .= "Phone: {$patient['phone']}\n";
-        $response .= "Member since: " . $memberDate->format('F j, Y') . "\n\n";
-        $response .= "To update your profile, please visit our website.";
-        sendMessage($chat_id, $response, $bot_token);
-    }
-    
-    elseif ($text == '/askappointment') {
-        $doctors = getDoctors($pdo);
-        
-        $response = "🏥 *Book a New Appointment*\n\n";
-        $response .= "*Step 1: Select a doctor*\n\n";
-        
-        $i = 1;
-        foreach ($doctors as $doctor) {
-            $response .= "{$i}. Dr. {$doctor['first_name']} {$doctor['last_name']} - {$doctor['specialization']}\n";
-            $i++;
-        }
-        $response .= "\nPlease enter the number of your choice.";
-        
-        $pdo->prepare("REPLACE INTO telegram_sessions (telegram_user_id, step, data_json, updated_at) VALUES (?, 'booking_doctor', '{}', NOW())")->execute([$telegram_user_id]);
-        
-        sendMessage($chat_id, $response, $bot_token);
-    }
-    
-    elseif ($text == '/help') {
-        $response = "❓ *Available Commands*\n\n";
-        $response .= "• `/appointments` - View all your appointments\n";
-        $response .= "• `/next` - Show your next confirmed appointment\n";
-        $response .= "• `/queue` - Check your queue position\n";
-        $response .= "• `/profile` - View your profile information\n";
-        $response .= "• `/askappointment` - Book a new appointment\n";
-        $response .= "• `/help` - Show this help message\n\n";
-        $response .= "📌 *Automatic Reminders*\n";
-        $response .= "You will receive appointment reminders automatically at 7 AM on the day of your appointment.\n\n";
-        $response .= "For urgent matters, please call the clinic directly.";
-        sendMessage($chat_id, $response, $bot_token);
-    }
-    
-    elseif (strpos($text, '/') === 0) {
-        sendMessage($chat_id, "🤖 *Unknown command*\n\nType `/help` to see available commands.", $bot_token);
     }
 }
-?>
+
+// UNKNOWN COMMAND
+if (str_starts_with($txt, '/')) {
+    sendMessage($cid, "🤖 *Unknown command*", $bot_token, createInlineKeyboard([[['text'=>'🏠 Main Menu','callback_data'=>'menu:home'], ['text'=>'❓ Help','callback_data'=>'menu:help']]]));
+}
+
+http_response_code(200);
