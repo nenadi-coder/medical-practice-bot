@@ -1,381 +1,513 @@
 <?php
-session_start();
-require_once '../includes/config.php';
+require_once 'includes/config.php';
 
-// ========== SMS FUNCTION - Using Environment Variables ==========
-define('EASYSENDSMS_USERNAME', getenv('SMS_USERNAME') ?: '');
-define('EASYSENDSMS_API_KEY', getenv('SMS_API_KEY') ?: '');
+// Get bot token from environment variable
+$bot_token = getenv('TELEGRAM_BOT_TOKEN') ?: '';
 
-// FALLBACK - SET THESE IF ENV VARS NOT AVAILABLE
-// define('EASYSENDSMS_USERNAME', 'nadoouamhou6s2026');
-// define('EASYSENDSMS_API_KEY', 'IBxpv37c');
-
-function sendSMS($phoneNumber, $message) {
-    $username = EASYSENDSMS_USERNAME;
-    $apiKey = EASYSENDSMS_API_KEY;
-    
-    if (empty($username) || empty($apiKey)) {
-        error_log("SMS credentials not configured");
-        return false;
-    }
-    
-    $phoneNumber = preg_replace('/^0+/', '', $phoneNumber);
-    if (!preg_match('/^213/', $phoneNumber)) {
-        $phoneNumber = '213' . $phoneNumber;
-    }
-    
-    $url = 'https://api.easysendsms.app/bulksms';
-    
-    $postData = http_build_query([
-        'username' => $username,
-        'password' => $apiKey,
-        'from'     => 'Clinic',
-        'to'       => $phoneNumber,
-        'text'     => $message,
-        'type'     => '0'
-    ]);
-    
-    $ch = curl_init();
-    curl_setopt_array($ch, [
-        CURLOPT_URL => $url,
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => $postData,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
-        CURLOPT_TIMEOUT => 30,
-    ]);
-    
-    $response = curl_exec($ch);
-    curl_close($ch);
-    
-    return $response && strpos($response, 'OK:') === 0;
+// FALLBACK - REMOVE IN PRODUCTION
+if (empty($bot_token)) {
+    $bot_token = '8330456846:AAHSmyKZrvCL5yLqpHjynBMqC6tM2u9k6N8';
 }
 
-// CSRF Token
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
+$content = file_get_contents('php://input');
+$update = json_decode($content, true);
 
-// Check if nurse is logged in
-if (!isset($_SESSION['nurse_id'])) {
-    header('Location: login.php');
+if (!$update) {
     exit();
 }
 
-$today = date('Y-m-d');
-
-// Handle status updates - WITH CSRF PROTECTION
-if (isset($_GET['action']) && isset($_GET['id'])) {
-    // Verify CSRF token for GET actions (using token in URL)
-    $token_valid = isset($_GET['csrf_token']) && hash_equals($_SESSION['csrf_token'], $_GET['csrf_token']);
+function sendMessage($chat_id, $message, $bot_token) {
+    $url = "https://api.telegram.org/bot{$bot_token}/sendMessage";
+    $data = [
+        'chat_id' => $chat_id,
+        'text' => $message,
+        'parse_mode' => 'Markdown'
+    ];
     
-    if (!$token_valid) {
-        $_SESSION['error'] = 'Invalid security token';
-        header('Location: dashboard.php?filter=' . urlencode($_GET['filter'] ?? 'today'));
+    $options = [
+        'http' => [
+            'header' => "Content-Type: application/x-www-form-urlencoded\r\n",
+            'method' => 'POST',
+            'content' => http_build_query($data)
+        ]
+    ];
+    
+    $context = stream_context_create($options);
+    return file_get_contents($url, false, $context);
+}
+
+function parseDateInput($input) {
+    $input = trim($input);
+    
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $input)) {
+        $date = DateTime::createFromFormat('Y-m-d', $input);
+        if ($date && $date->format('Y-m-d') == $input) {
+            return $date;
+        }
+    }
+    
+    if (preg_match('/^\d{2}-\d{2}-\d{4}$/', $input)) {
+        $date = DateTime::createFromFormat('d-m-Y', $input);
+        if ($date && $date->format('d-m-Y') == $input) {
+            return $date;
+        }
+    }
+    
+    if (preg_match('#^\d{2}/\d{2}/\d{4}$#', $input)) {
+        $date = DateTime::createFromFormat('d/m/Y', $input);
+        if ($date && $date->format('d/m/Y') == $input) {
+            return $date;
+        }
+    }
+    
+    return false;
+}
+
+function getAvailableTimeSlots($pdo, $date, $doctor_id = 1) {
+    $bookedSlots = [];
+    $stmt = $pdo->prepare("SELECT appointment_time FROM appointments WHERE appointment_date = ? AND doctor_id = ? AND status NOT IN ('cancelled')");
+    $stmt->execute([$date, $doctor_id]);
+    $booked = $stmt->fetchAll();
+    
+    foreach ($booked as $b) {
+        $bookedSlots[] = date('H:i:s', strtotime($b['appointment_time']));
+    }
+    
+    $allSlots = [
+        '08:30:00' => '8:30 AM',
+        '09:00:00' => '9:00 AM',
+        '09:30:00' => '9:30 AM',
+        '10:00:00' => '10:00 AM',
+        '10:30:00' => '10:30 AM',
+        '11:00:00' => '11:00 AM',
+        '11:30:00' => '11:30 AM',
+        '12:00:00' => '12:00 PM',
+        '12:30:00' => '12:30 PM',
+        '13:00:00' => '1:00 PM',
+        '13:30:00' => '1:30 PM',
+        '14:00:00' => '2:00 PM',
+        '14:30:00' => '2:30 PM',
+        '15:00:00' => '3:00 PM',
+        '15:30:00' => '3:30 PM',
+        '16:00:00' => '4:00 PM',
+        '16:30:00' => '4:30 PM'
+    ];
+    
+    $available = [];
+    foreach ($allSlots as $time => $display) {
+        if (!in_array($time, $bookedSlots)) {
+            $available[] = ['time' => $time, 'display' => $display];
+        }
+    }
+    return $available;
+}
+
+function getDoctors($pdo) {
+    $stmt = $pdo->query("SELECT doctor_id, first_name, last_name, specialization FROM doctors");
+    return $stmt->fetchAll();
+}
+
+if (isset($update['message'])) {
+    $message = $update['message'];
+    $chat_id = $message['chat']['id'];
+    $text = trim($message['text'] ?? '');
+    $telegram_user_id = $message['from']['id'];
+    
+    // Check if user is already linked
+    $stmt = $pdo->prepare("SELECT patient_id, first_name, last_name, email, phone, created_at FROM patients WHERE telegram_user_id = ?");
+    $stmt->execute([$telegram_user_id]);
+    $patient = $stmt->fetch();
+    
+    // Get session if exists
+    $session_stmt = $pdo->prepare("SELECT step, data_json FROM telegram_sessions WHERE telegram_user_id = ?");
+    $session_stmt->execute([$telegram_user_id]);
+    $session = $session_stmt->fetch();
+    
+    // ========== USER NOT LINKED ==========
+    if (!$patient) {
+        if ($text == '/start') {
+            $pdo->prepare("REPLACE INTO telegram_sessions (telegram_user_id, step, data_json, updated_at) VALUES (?, 'waiting_email', NULL, NOW())")->execute([$telegram_user_id]);
+            
+            $response = "🏥 *Welcome to Shifa Medical Center Bot!*\n\n";
+            $response .= "To link your account, please enter your registered email address or phone number.\n\n";
+            $response .= "*Example:* `lana@gmail.com` or `0556431565`\n\n";
+            $response .= "This will instantly link your Telegram account.";
+            sendMessage($chat_id, $response, $bot_token);
+        }
+        elseif ($session && $session['step'] == 'waiting_email') {
+            $input = trim($text);
+            
+            $stmt = $pdo->prepare("SELECT patient_id, first_name, last_name, email, phone, created_at FROM patients WHERE email = ? OR phone = ?");
+            $stmt->execute([$input, $input]);
+            $found = $stmt->fetch();
+            
+            if ($found) {
+                $pdo->prepare("UPDATE patients SET telegram_user_id = ?, telegram_linked_at = NOW() WHERE patient_id = ?")->execute([$telegram_user_id, $found['patient_id']]);
+                $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+                
+                $response = "✅ *Account Linked Successfully!*\n\n";
+                $response .= "Welcome {$found['first_name']} {$found['last_name']}!\n\n";
+                $response .= "*Available Commands:*\n";
+                $response .= "• `/appointments` - View your appointments\n";
+                $response .= "• `/next` - Your next appointment\n";
+                $response .= "• `/queue` - Check queue position\n";
+                $response .= "• `/profile` - View your profile\n";
+                $response .= "• `/askappointment` - Book an appointment\n";
+                $response .= "• `/help` - Show all commands\n\n";
+                $response .= "You will automatically receive appointment reminders.";
+                sendMessage($chat_id, $response, $bot_token);
+            } else {
+                sendMessage($chat_id, "❌ *Account not found*\n\nNo patient found with: `{$input}`\n\nType /start to try again.", $bot_token);
+                $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+            }
+        }
+        else {
+            sendMessage($chat_id, "👋 *Welcome!*\n\nType /start to link your account.", $bot_token);
+        }
         exit();
     }
     
-    $appointment_id = (int)$_GET['id'];
-    $action = $_GET['action'];
-    $nurse_id = $_SESSION['nurse_id'];
+    // ========== USER IS LINKED ==========
     
-    $check_sql = "SELECT appointment_id FROM appointments WHERE appointment_id = ?";
-    $check_stmt = $pdo->prepare($check_sql);
-    $check_stmt->execute([$appointment_id]);
-    
-    if ($check_stmt->rowCount() > 0) {
-        $new_status = '';
-        $message = '';
+    // Check if in booking flow
+    if ($session && $session['step'] == 'booking_doctor') {
+        $data = json_decode($session['data_json'], true);
         
-        switch($action) {
-            case 'confirm':
-                $new_status = 'confirmed';
-                $message = 'Appointment confirmed successfully';
+        if (is_numeric($text)) {
+            $doctor_choice = (int)$text;
+            $doctors = getDoctors($pdo);
+            
+            if ($doctor_choice >= 1 && $doctor_choice <= count($doctors)) {
+                $selected_doctor = $doctors[$doctor_choice - 1];
                 
-                $apt_sql = "SELECT a.send_sms, p.phone, p.first_name, p.last_name, 
-                                   d.first_name as doctor_first, d.last_name as doctor_last,
-                                   a.appointment_date, a.appointment_time, a.queue_number
-                            FROM appointments a
-                            JOIN patients p ON a.patient_id = p.patient_id
-                            JOIN doctors d ON a.doctor_id = d.doctor_id
-                            WHERE a.appointment_id = ?";
-                $apt_stmt = $pdo->prepare($apt_sql);
-                $apt_stmt->execute([$appointment_id]);
-                $apt = $apt_stmt->fetch();
+                $pdo->prepare("UPDATE telegram_sessions SET step = 'booking_date', data_json = ? WHERE telegram_user_id = ?")
+                    ->execute([json_encode(['doctor_id' => $selected_doctor['doctor_id'], 'doctor_name' => $selected_doctor['first_name'] . ' ' . $selected_doctor['last_name']]), $telegram_user_id]);
                 
-                if ($apt && $apt['send_sms'] == 1) {
-                    $date = date('d/m', strtotime($apt['appointment_date']));
-                    $time = date('H:i', strtotime($apt['appointment_time']));
-                    $smsMessage = "✅ Appt confirmed: $date at $time with Dr. {$apt['doctor_last']}. Queue #{$apt['queue_number']}";
-                    
-                    if (sendSMS($apt['phone'], $smsMessage)) {
-                        $message .= " & SMS sent";
-                    } else {
-                        $message .= " (SMS failed)";
-                    }
-                } elseif ($apt && $apt['send_sms'] == 0) {
-                    $message .= " (No SMS requested)";
-                }
-                break;
-            case 'cancel':
-                $new_status = 'cancelled';
-                $message = 'Appointment cancelled';
-                break;
-            case 'noshow':
-                $new_status = 'no-show';
-                $message = 'Patient marked as no-show';
-                break;
-            case 'complete':
-                $new_status = 'completed';
-                $message = 'Appointment completed';
-                break;
-        }
-        
-        if ($new_status) {
-            $update_sql = "UPDATE appointments SET status = ?, nurse_id = ? WHERE appointment_id = ?";
-            $update_stmt = $pdo->prepare($update_sql);
-            if ($update_stmt->execute([$new_status, $nurse_id, $appointment_id])) {
-                $_SESSION['success'] = $message;
+                $response = "✅ *Doctor selected:* Dr. {$selected_doctor['first_name']} {$selected_doctor['last_name']}\n\n";
+                $response .= "*Step 2: Select a date*\n\n";
+                $response .= "Please enter the appointment date in any of these formats:\n";
+                $response .= "• `YYYY-MM-DD` (example: 2026-04-25)\n";
+                $response .= "• `DD-MM-YYYY` (example: 25-04-2026)\n";
+                $response .= "• `DD/MM/YYYY` (example: 25/04/2026)\n\n";
+                $response .= "⚠️ Date must be at least tomorrow.";
+                sendMessage($chat_id, $response, $bot_token);
             } else {
-                $_SESSION['error'] = 'Failed to update appointment';
+                sendMessage($chat_id, "❌ Invalid choice. Please enter a number from the list.", $bot_token);
+            }
+        } else {
+            sendMessage($chat_id, "❌ Please enter the number of your chosen doctor.", $bot_token);
+        }
+        exit();
+    }
+    
+    if ($session && $session['step'] == 'booking_date') {
+        $data = json_decode($session['data_json'], true);
+        $dateObj = parseDateInput($text);
+        $tomorrow = new DateTime('tomorrow');
+        
+        if ($dateObj && $dateObj >= $tomorrow) {
+            $selected_date = $dateObj->format('Y-m-d');
+            $display_date = $dateObj->format('l, F j, Y');
+            
+            $data['date'] = $selected_date;
+            $data['display_date'] = $display_date;
+            
+            $availableSlots = getAvailableTimeSlots($pdo, $selected_date, $data['doctor_id']);
+            
+            if (empty($availableSlots)) {
+                sendMessage($chat_id, "❌ No available slots on " . $display_date . ". Please choose another date.\n\nType a new date or 'cancel' to cancel.", $bot_token);
+                $pdo->prepare("UPDATE telegram_sessions SET step = 'booking_date', data_json = ? WHERE telegram_user_id = ?")->execute([json_encode($data), $telegram_user_id]);
+                exit();
+            }
+            
+            $data['available_slots'] = $availableSlots;
+            $pdo->prepare("UPDATE telegram_sessions SET step = 'booking_time', data_json = ? WHERE telegram_user_id = ?")->execute([json_encode($data), $telegram_user_id]);
+            
+            $response = "📅 *Date selected:* {$display_date}\n\n";
+            $response .= "*Step 3: Select a time*\n\n";
+            $response .= "Available time slots:\n";
+            
+            $slot_num = 1;
+            foreach ($availableSlots as $slot) {
+                $response .= "{$slot_num}. {$slot['display']}\n";
+                $slot_num++;
+            }
+            $response .= "\nPlease enter the number of your preferred time slot.";
+            
+            sendMessage($chat_id, $response, $bot_token);
+        } 
+        elseif ($text == 'cancel') {
+            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+            sendMessage($chat_id, "❌ Booking cancelled. Type /askappointment to start over.", $bot_token);
+        }
+        else {
+            sendMessage($chat_id, "❌ Invalid date format or date is in the past.\n\nPlease use:\n• `YYYY-MM-DD`\n• `DD-MM-YYYY`\n• `DD/MM/YYYY`\n\nDate must be at least tomorrow.", $bot_token);
+        }
+        exit();
+    }
+    
+    if ($session && $session['step'] == 'booking_time') {
+        $data = json_decode($session['data_json'], true);
+        $availableSlots = $data['available_slots'];
+        
+        if (is_numeric($text) && $text >= 1 && $text <= count($availableSlots)) {
+            $selected_slot = $availableSlots[$text - 1];
+            
+            $check = $pdo->prepare("SELECT appointment_id FROM appointments WHERE appointment_date = ? AND appointment_time = ? AND doctor_id = ? AND status NOT IN ('cancelled')");
+            $check->execute([$data['date'], $selected_slot['time'], $data['doctor_id']]);
+            
+            if ($check->rowCount() > 0) {
+                sendMessage($chat_id, "❌ Sorry, that time slot was just taken. Please restart booking with /askappointment.", $bot_token);
+                $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+                exit();
+            }
+            
+            $data['time'] = $selected_slot['time'];
+            $data['display_time'] = $selected_slot['display'];
+            unset($data['available_slots']);
+            
+            $pdo->prepare("UPDATE telegram_sessions SET step = 'booking_confirm', data_json = ? WHERE telegram_user_id = ?")->execute([json_encode($data), $telegram_user_id]);
+            
+            $response = "⏰ *Time selected:* {$data['display_time']}\n\n";
+            $response .= "*Step 4: Confirm your appointment*\n\n";
+            $response .= "📋 *Appointment Details:*\n";
+            $response .= "👨‍⚕️ Doctor: Dr. {$data['doctor_name']}\n";
+            $response .= "📆 Date: {$data['display_date']}\n";
+            $response .= "⏰ Time: {$data['display_time']}\n\n";
+            $response .= "✅ Type `confirm` to book this appointment\n";
+            $response .= "❌ Type `cancel` to cancel\n";
+            $response .= "🔄 Type a new date (DD-MM-YYYY) to change the date";
+            sendMessage($chat_id, $response, $bot_token);
+        }
+        elseif ($text == 'cancel') {
+            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+            sendMessage($chat_id, "❌ Booking cancelled. Type /askappointment to start over.", $bot_token);
+        }
+        else {
+            sendMessage($chat_id, "❌ Invalid choice. Please enter the number from the list.", $bot_token);
+        }
+        exit();
+    }
+    
+    if ($session && $session['step'] == 'booking_confirm') {
+        $data = json_decode($session['data_json'], true);
+        
+        if (strtolower($text) == 'confirm') {
+            $check = $pdo->prepare("SELECT appointment_id FROM appointments WHERE appointment_date = ? AND appointment_time = ? AND doctor_id = ? AND status NOT IN ('cancelled')");
+            $check->execute([$data['date'], $data['time'], $data['doctor_id']]);
+            
+            if ($check->rowCount() > 0) {
+                sendMessage($chat_id, "❌ Sorry, this slot is no longer available. Please start over with /askappointment.", $bot_token);
+                $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+                exit();
+            }
+            
+            $queue_stmt = $pdo->prepare("SELECT COUNT(*) + 1 as next_queue FROM appointments WHERE appointment_date = ? AND appointment_time < ?");
+            $queue_stmt->execute([$data['date'], $data['time']]);
+            $queueNum = $queue_stmt->fetchColumn();
+            
+            $insert = $pdo->prepare("INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, queue_number, status, send_sms, created_at) VALUES (?, ?, ?, ?, ?, 'scheduled', 1, NOW())");
+            $insert->execute([$patient['patient_id'], $data['doctor_id'], $data['date'], $data['time'], $queueNum]);
+            
+            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+            
+            $response = "✅ *Appointment Booked Successfully!*\n\n";
+            $response .= "📋 *Appointment Details:*\n";
+            $response .= "👨‍⚕️ Doctor: Dr. {$data['doctor_name']}\n";
+            $response .= "📆 Date: {$data['display_date']}\n";
+            $response .= "⏰ Time: {$data['display_time']}\n";
+            $response .= "🎫 Queue Number: {$queueNum}\n\n";
+            $response .= "📌 Please arrive 10 minutes before your appointment time.\n";
+            $response .= "You will receive a reminder before your appointment.\n\n";
+            $response .= "Use `/appointments` to view all your appointments or `/next` to see your next one.";
+            sendMessage($chat_id, $response, $bot_token);
+        }
+        elseif (strtolower($text) == 'cancel') {
+            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+            sendMessage($chat_id, "❌ Booking cancelled. Type /askappointment to start over.", $bot_token);
+        }
+        else {
+            $newDate = parseDateInput($text);
+            $tomorrow = new DateTime('tomorrow');
+            
+            if ($newDate && $newDate >= $tomorrow) {
+                $data['date'] = $newDate->format('Y-m-d');
+                $data['display_date'] = $newDate->format('l, F j, Y');
+                unset($data['time'], $data['display_time']);
+                
+                $availableSlots = getAvailableTimeSlots($pdo, $data['date'], $data['doctor_id']);
+                
+                if (empty($availableSlots)) {
+                    sendMessage($chat_id, "❌ No available slots on {$data['display_date']}. Please try another date or type 'cancel'.", $bot_token);
+                    exit();
+                }
+                
+                $data['available_slots'] = $availableSlots;
+                $pdo->prepare("UPDATE telegram_sessions SET step = 'booking_time', data_json = ? WHERE telegram_user_id = ?")->execute([json_encode($data), $telegram_user_id]);
+                
+                $response = "🔄 *Date changed to:* {$data['display_date']}\n\n";
+                $response .= "*Available time slots:*\n";
+                $slot_num = 1;
+                foreach ($availableSlots as $slot) {
+                    $response .= "{$slot_num}. {$slot['display']}\n";
+                    $slot_num++;
+                }
+                $response .= "\nPlease enter the number of your preferred time slot.";
+                sendMessage($chat_id, $response, $bot_token);
+            } else {
+                sendMessage($chat_id, "❌ Invalid option. Type `confirm` to book, `cancel` to cancel, or enter a new date (DD-MM-YYYY).", $bot_token);
             }
         }
-    } else {
-        $_SESSION['error'] = 'Invalid appointment';
+        exit();
     }
-    header('Location: dashboard.php?filter=' . urlencode($_GET['filter'] ?? 'today'));
-    exit();
-}
-
-// Get filter from URL
-$filter = isset($_GET['filter']) ? $_GET['filter'] : 'today';
-$date_filter = $today;
-
-if ($filter == 'tomorrow') {
-    $date_filter = date('Y-m-d', strtotime('+1 day'));
-} elseif ($filter == 'all') {
-    $date_filter = '';
-}
-
-if ($filter == 'all') {
-    $sql = "SELECT a.*, a.send_sms,
-            CONCAT(p.first_name, ' ', p.last_name) as patient_name,
-            p.phone as patient_phone,
-            CONCAT(d.first_name, ' ', d.last_name) as doctor_name
+    
+    // ========== REGULAR COMMANDS ==========
+    
+    if ($text == '/appointments') {
+        $stmt = $pdo->prepare("
+            SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
             FROM appointments a
-            JOIN patients p ON a.patient_id = p.patient_id
             JOIN doctors d ON a.doctor_id = d.doctor_id
-            ORDER BY a.appointment_date DESC, a.appointment_time ASC";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute();
-} else {
-    $sql = "SELECT a.*, a.send_sms,
-            CONCAT(p.first_name, ' ', p.last_name) as patient_name,
-            p.phone as patient_phone,
-            CONCAT(d.first_name, ' ', d.last_name) as doctor_name
+            WHERE a.patient_id = ?
+            ORDER BY a.appointment_date DESC, a.appointment_time DESC
+        ");
+        $stmt->execute([$patient['patient_id']]);
+        $appointments = $stmt->fetchAll();
+        
+        if (count($appointments) > 0) {
+            $response = "📋 *Your Appointments*\n\n";
+            foreach ($appointments as $apt) {
+                $statusIcon = ($apt['status'] == 'confirmed') ? '✅' : '⏳';
+                $response .= "{$statusIcon} " . date('M j, Y', strtotime($apt['appointment_date'])) . " - " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
+                $response .= "   Dr. {$apt['doctor_name']} | Queue #{$apt['queue_number']}\n";
+                $response .= "   Status: " . ucfirst($apt['status']) . "\n\n";
+            }
+            $response .= "To book a new appointment, use `/askappointment`.";
+            sendMessage($chat_id, $response, $bot_token);
+        } else {
+            sendMessage($chat_id, "📭 *No appointments found*\n\nUse `/askappointment` to book your first appointment.", $bot_token);
+        }
+    }
+    
+    elseif ($text == '/next') {
+        $stmt = $pdo->prepare("
+            SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name
             FROM appointments a
-            JOIN patients p ON a.patient_id = p.patient_id
             JOIN doctors d ON a.doctor_id = d.doctor_id
-            WHERE a.appointment_date = ?
-            ORDER BY a.appointment_time ASC";
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute([$date_filter]);
-}
-$appointments = $stmt->fetchAll();
-
-// Get stats for today
-$stats_sql = "SELECT 
-              COUNT(*) as total,
-              SUM(CASE WHEN status = 'scheduled' THEN 1 ELSE 0 END) as scheduled,
-              SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) as confirmed,
-              SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
-              SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
-              SUM(CASE WHEN status = 'no-show' THEN 1 ELSE 0 END) as noshow
-              FROM appointments WHERE appointment_date = ?";
-$stats_stmt = $pdo->prepare($stats_sql);
-$stats_stmt->execute([$today]);
-$stats = $stats_stmt->fetch();
-
-if (!$stats) {
-    $stats = [
-        'total' => 0,
-        'scheduled' => 0,
-        'confirmed' => 0,
-        'completed' => 0,
-        'cancelled' => 0,
-        'noshow' => 0
-    ];
+            WHERE a.patient_id = ? 
+            AND a.appointment_date >= CURDATE()
+            AND a.status = 'confirmed'
+            ORDER BY a.appointment_date ASC, a.appointment_time ASC
+            LIMIT 1
+        ");
+        $stmt->execute([$patient['patient_id']]);
+        $apt = $stmt->fetch();
+        
+        if ($apt) {
+            $response = "📅 *Your Next Appointment*\n\n";
+            $response .= "📆 Date: " . date('l, F j, Y', strtotime($apt['appointment_date'])) . "\n";
+            $response .= "⏰ Time: " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
+            $response .= "👨‍⚕️ Doctor: Dr. {$apt['doctor_name']}\n";
+            $response .= "🎫 Queue #: {$apt['queue_number']}\n";
+            $response .= "📌 Status: " . ucfirst($apt['status']) . "\n\n";
+            $response .= "Please arrive 10 minutes early!";
+            sendMessage($chat_id, $response, $bot_token);
+        } else {
+            sendMessage($chat_id, "❌ *No confirmed appointments found*\n\nYour appointments may be pending confirmation by the nurse, or you have no upcoming appointments.\n\nUse `/appointments` to check your requests.", $bot_token);
+        }
+    }
+    
+    elseif ($text == '/queue') {
+        $stmt = $pdo->prepare("
+            SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name,
+                (SELECT COUNT(*) FROM appointments 
+                 WHERE appointment_date = a.appointment_date 
+                 AND appointment_time < a.appointment_time 
+                 AND status IN ('scheduled', 'confirmed')
+                 AND doctor_id = a.doctor_id) as people_ahead,
+                (SELECT COUNT(*) FROM appointments 
+                 WHERE appointment_date = a.appointment_date 
+                 AND status IN ('scheduled', 'confirmed')
+                 AND doctor_id = a.doctor_id) as total_waiting
+            FROM appointments a
+            JOIN doctors d ON a.doctor_id = d.doctor_id
+            WHERE a.patient_id = ? 
+            AND a.appointment_date = CURDATE()
+            AND a.status IN ('scheduled', 'confirmed')
+            ORDER BY a.appointment_time ASC
+            LIMIT 1
+        ");
+        $stmt->execute([$patient['patient_id']]);
+        $apt = $stmt->fetch();
+        
+        if ($apt) {
+            $peopleAhead = $apt['people_ahead'];
+            $totalWaiting = $apt['total_waiting'];
+            $position = $peopleAhead + 1;
+            
+            $response = "🎫 *Queue Information*\n\n";
+            $response .= "👨‍⚕️ Doctor: Dr. {$apt['doctor_name']}\n";
+            $response .= "🎟️ Your Queue #: {$apt['queue_number']}\n";
+            $response .= "📊 Position: {$position} of {$totalWaiting} waiting\n";
+            $response .= "👥 People ahead: {$peopleAhead}\n\n";
+            
+            if ($peopleAhead == 0) {
+                $response .= "🔔 *You're NEXT!* Please be ready when called.";
+            } else {
+                $waitTime = $peopleAhead * 15;
+                $response .= "⏱️ Estimated wait: ~{$waitTime} minutes";
+            }
+            sendMessage($chat_id, $response, $bot_token);
+        } else {
+            sendMessage($chat_id, "🎫 *No Active Queue*\n\nYou don't have any confirmed appointments scheduled for today.\n\nCheck `/appointments` to see pending requests.\nSend `/next` to see your next confirmed appointment.", $bot_token);
+        }
+    }
+    
+    elseif ($text == '/profile') {
+        $memberDate = new DateTime($patient['created_at']);
+        $response = "👤 *Your Profile*\n\n";
+        $response .= "Name: {$patient['first_name']} {$patient['last_name']}\n";
+        $response .= "Email: {$patient['email']}\n";
+        $response .= "Phone: {$patient['phone']}\n";
+        $response .= "Member since: " . $memberDate->format('F j, Y') . "\n\n";
+        $response .= "To update your profile, please visit our website.";
+        sendMessage($chat_id, $response, $bot_token);
+    }
+    
+    elseif ($text == '/askappointment') {
+        $doctors = getDoctors($pdo);
+        
+        $response = "🏥 *Book a New Appointment*\n\n";
+        $response .= "*Step 1: Select a doctor*\n\n";
+        
+        $i = 1;
+        foreach ($doctors as $doctor) {
+            $response .= "{$i}. Dr. {$doctor['first_name']} {$doctor['last_name']} - {$doctor['specialization']}\n";
+            $i++;
+        }
+        $response .= "\nPlease enter the number of your choice.";
+        
+        $pdo->prepare("REPLACE INTO telegram_sessions (telegram_user_id, step, data_json, updated_at) VALUES (?, 'booking_doctor', '{}', NOW())")->execute([$telegram_user_id]);
+        
+        sendMessage($chat_id, $response, $bot_token);
+    }
+    
+    elseif ($text == '/help') {
+        $response = "❓ *Available Commands*\n\n";
+        $response .= "• `/appointments` - View all your appointments\n";
+        $response .= "• `/next` - Show your next confirmed appointment\n";
+        $response .= "• `/queue` - Check your queue position\n";
+        $response .= "• `/profile` - View your profile information\n";
+        $response .= "• `/askappointment` - Book a new appointment\n";
+        $response .= "• `/help` - Show this help message\n\n";
+        $response .= "📌 *Automatic Reminders*\n";
+        $response .= "You will receive appointment reminders automatically at 7 AM on the day of your appointment.\n\n";
+        $response .= "For urgent matters, please call the clinic directly.";
+        sendMessage($chat_id, $response, $bot_token);
+    }
+    
+    elseif (strpos($text, '/') === 0) {
+        sendMessage($chat_id, "🤖 *Unknown command*\n\nType `/help` to see available commands.", $bot_token);
+    }
 }
 ?>
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Nurse Dashboard | Medical Practice</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Inter', sans-serif;
-            background: linear-gradient(125deg, #e0f0ff 0%, #f5f0fc 100%);
-            min-height: 100vh;
-            color: #1e2a3e;
-        }
-        .navbar {
-            background: white;
-            backdrop-filter: blur(10px);
-            padding: 1rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
-            border-bottom: 1px solid rgba(102, 126, 234, 0.15);
-            flex-wrap: wrap;
-            gap: 1rem;
-        }
-        .navbar h1 { font-size: 1.5rem; font-weight: 700; background: linear-gradient(120deg, #1e2a3e, #2d3a5e); background-clip: text; -webkit-background-clip: text; color: transparent; }
-        .navbar h1 i { background: none; color: #4f46e5; margin-right: 8px; }
-        .user-info { display: flex; align-items: center; gap: 1rem; background: #f1f5f9; padding: 0.5rem 1rem; border-radius: 60px; }
-        .user-info span { font-weight: 600; color: #1e2a3e; }
-        .logout { background: #f56565; padding: 0.5rem 1rem; border-radius: 60px; color: white; text-decoration: none; font-weight: 600; font-size: 0.85rem; transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px; }
-        .logout:hover { background: #e53e3e; transform: translateY(-1px); }
-        .container { max-width: 1400px; margin: 2rem auto; padding: 0 1.5rem; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-        .stat-card { background: white; padding: 1.2rem; border-radius: 1.2rem; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); text-align: center; border: 1px solid rgba(102, 126, 234, 0.1); transition: all 0.2s ease; }
-        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08); }
-        .stat-number { font-size: 2rem; font-weight: 800; background: linear-gradient(95deg, #4f46e5, #7c3aed); background-clip: text; -webkit-background-clip: text; color: transparent; }
-        .stat-label { color: #5b6e8c; margin-top: 0.4rem; font-size: 0.8rem; font-weight: 500; }
-        .filter-bar { background: white; padding: 1rem 1.5rem; border-radius: 1.2rem; margin-bottom: 2rem; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; border: 1px solid rgba(102, 126, 234, 0.1); }
-        .filter-btn { padding: 0.5rem 1.2rem; border: none; border-radius: 60px; cursor: pointer; text-decoration: none; background: #f1f5f9; color: #1e2a3e; font-weight: 600; font-size: 0.85rem; transition: all 0.2s ease; }
-        .filter-btn.active { background: linear-gradient(95deg, #4f46e5, #7c3aed); color: white; }
-        .filter-btn:hover:not(.active) { background: #e2e8f0; }
-        .filter-info { margin-left: auto; font-size: 0.85rem; color: #5b6e8c; }
-        .appointments-table { background: white; border-radius: 1.2rem; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); overflow-x: auto; border: 1px solid rgba(102, 126, 234, 0.1); }
-        table { width: 100%; border-collapse: collapse; min-width: 900px; }
-        th { background: linear-gradient(95deg, #4f46e5, #7c3aed); color: white; padding: 1rem; text-align: left; font-weight: 600; font-size: 0.85rem; }
-        td { padding: 1rem; border-bottom: 1px solid #e2e8f0; font-size: 0.85rem; }
-        tr:hover { background: #f8fafc; }
-        .status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 0.25rem 0.75rem; border-radius: 60px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
-        .status-scheduled { background: #e3f2fd; color: #1976d2; }
-        .status-confirmed { background: #e8f5e8; color: #388e3c; }
-        .status-completed { background: #f3e5f5; color: #7b1fa2; }
-        .status-cancelled { background: #ffebee; color: #c62828; }
-        .status-no-show { background: #fff3e0; color: #e65100; }
-        .action-btn { display: inline-flex; align-items: center; gap: 5px; padding: 0.4rem 0.8rem; margin: 0.2rem; border: none; border-radius: 60px; cursor: pointer; text-decoration: none; font-size: 0.7rem; font-weight: 600; transition: all 0.2s ease; }
-        .btn-confirm { background: #48bb78; color: white; }
-        .btn-complete { background: #9f7aea; color: white; }
-        .btn-cancel { background: #f56565; color: white; }
-        .btn-noshow { background: #ed8936; color: white; }
-        .action-btn:hover { transform: translateY(-1px); filter: brightness(0.9); }
-        .print-ticket { display: inline-flex; align-items: center; gap: 5px; background: #718096; color: white; padding: 0.4rem 0.8rem; border-radius: 60px; text-decoration: none; font-size: 0.7rem; font-weight: 600; transition: all 0.2s ease; }
-        .print-ticket:hover { background: #4a5568; transform: translateY(-1px); }
-        .sms-badge { display: inline-flex; align-items: center; gap: 4px; padding: 0.25rem 0.6rem; border-radius: 60px; font-size: 0.65rem; font-weight: 700; }
-        .sms-yes { background: #e8f5e8; color: #2e7d32; }
-        .sms-no { background: #ffebee; color: #c62828; }
-        .queue-number { font-weight: 700; color: #4f46e5; font-size: 1rem; }
-        .message { padding: 1rem; border-radius: 1rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 10px; }
-        .success { background: #e8f5e8; color: #2e7d32; border-left: 4px solid #48bb78; }
-        .error { background: #ffebee; color: #c62828; border-left: 4px solid #f56565; }
-        .empty-row td { text-align: center; padding: 3rem; color: #94a3b8; }
-        @media (max-width: 768px) {
-            .navbar { flex-direction: column; text-align: center; }
-            .stats-grid { grid-template-columns: repeat(2, 1fr); }
-            .filter-bar { justify-content: center; }
-            .filter-info { margin-left: 0; width: 100%; text-align: center; }
-            .container { padding: 0 1rem; }
-        }
-    </style>
-</head>
-<body>
-    <div class="navbar">
-        <h1><i class="fas fa-stethoscope"></i>Shifa Medical Center</h1>
-        <div class="user-info">
-            <i class="fas fa-user-nurse" style="color: #4f46e5;"></i>
-            <span>Welcome, <?php echo htmlspecialchars($_SESSION['nurse_name']); ?></span>
-            <a href="logout.php" class="logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
-        </div>
-    </div>
-    
-    <div class="container">
-        <?php if (isset($_SESSION['success'])): ?>
-            <div class="message success">
-                <i class="fas fa-check-circle"></i> <?php echo htmlspecialchars($_SESSION['success']); unset($_SESSION['success']); ?>
-            </div>
-        <?php endif; ?>
-        
-        <?php if (isset($_SESSION['error'])): ?>
-            <div class="message error">
-                <i class="fas fa-exclamation-circle"></i> <?php echo htmlspecialchars($_SESSION['error']); unset($_SESSION['error']); ?>
-            </div>
-        <?php endif; ?>
-        
-        <div class="stats-grid">
-            <div class="stat-card"><div class="stat-number"><?php echo htmlspecialchars($stats['total']); ?></div><div class="stat-label"><i class="fas fa-calendar-day"></i> Total Today</div></div>
-            <div class="stat-card"><div class="stat-number"><?php echo htmlspecialchars($stats['scheduled']); ?></div><div class="stat-label"><i class="fas fa-clock"></i> Scheduled</div></div>
-            <div class="stat-card"><div class="stat-number"><?php echo htmlspecialchars($stats['confirmed']); ?></div><div class="stat-label"><i class="fas fa-check-circle"></i> Confirmed</div></div>
-            <div class="stat-card"><div class="stat-number"><?php echo htmlspecialchars($stats['completed']); ?></div><div class="stat-label"><i class="fas fa-flag-checkered"></i> Completed</div></div>
-            <div class="stat-card"><div class="stat-number"><?php echo htmlspecialchars($stats['cancelled']); ?></div><div class="stat-label"><i class="fas fa-ban"></i> Cancelled</div></div>
-        </div>
-        
-        <div class="filter-bar">
-            <a href="?filter=today&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="filter-btn <?php echo $filter == 'today' ? 'active' : ''; ?>"><i class="fas fa-calendar-day"></i> Today</a>
-            <a href="?filter=tomorrow&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="filter-btn <?php echo $filter == 'tomorrow' ? 'active' : ''; ?>"><i class="fas fa-calendar-plus"></i> Tomorrow</a>
-            <a href="?filter=all&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="filter-btn <?php echo $filter == 'all' ? 'active' : ''; ?>"><i class="fas fa-list"></i> All Appointments</a>
-            <span class="filter-info"><i class="fas fa-eye"></i> Showing: <strong><?php if ($filter == 'today') echo date('F j, Y'); elseif ($filter == 'tomorrow') echo date('F j, Y', strtotime('+1 day')); else echo 'All dates'; ?></strong></span>
-        </div>
-        
-        <div class="appointments-table">
-            <table>
-                <thead>
-                    <tr>
-                        <th><i class="far fa-clock"></i> Time</th>
-                        <th><i class="fas fa-user"></i> Patient</th>
-                        <th><i class="fas fa-phone"></i> Phone</th>
-                        <th><i class="fas fa-user-md"></i> Doctor</th>
-                        <th><i class="fas fa-ticket-alt"></i> Queue #</th>
-                        <th><i class="fas fa-tag"></i> Status</th>
-                        <th><i class="fas fa-sms"></i> SMS</th>
-                        <th><i class="fas fa-cog"></i> Actions</th>
-                        <th><i class="fas fa-print"></i> Ticket</th>
-                    </tr>
-                </thead>
-                <tbody>
-                <?php if (count($appointments) > 0): ?>
-                    <?php foreach($appointments as $apt): ?>
-                        <tr>
-                            <td><i class="far fa-clock"></i> <?php echo date('g:i A', strtotime($apt['appointment_time'])); ?></td>
-                            <td><strong><?php echo htmlspecialchars($apt['patient_name']); ?></strong></td>
-                            <td><?php echo htmlspecialchars($apt['patient_phone']); ?></td>
-                            <td>Dr. <?php echo htmlspecialchars($apt['doctor_name']); ?></td>
-                            <td><span class="queue-number">#<?php echo htmlspecialchars($apt['queue_number']); ?></span></td>
-                            <td><span class="status-badge status-<?php echo $apt['status']; ?>"><i class="fas <?php echo $apt['status'] == 'scheduled' ? 'fa-clock' : ($apt['status'] == 'confirmed' ? 'fa-check-circle' : ($apt['status'] == 'completed' ? 'fa-flag-checkered' : ($apt['status'] == 'cancelled' ? 'fa-ban' : 'fa-user-slash'))); ?>"></i> <?php echo ucfirst($apt['status']); ?></span></td>
-                            <td><?php if (isset($apt['send_sms']) && $apt['send_sms'] == 1): ?><span class="sms-badge sms-yes"><i class="fas fa-check"></i> Yes</span><?php else: ?><span class="sms-badge sms-no"><i class="fas fa-times"></i> No</span><?php endif; ?></td>
-                            <td>
-                                <?php if ($apt['status'] == 'scheduled'): ?>
-                                    <a href="?action=confirm&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="action-btn btn-confirm" onclick="return confirm('Confirm this appointment? SMS will be sent if patient requested.');"><i class="fas fa-check"></i> Confirm</a>
-                                    <a href="?action=cancel&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="action-btn btn-cancel" onclick="return confirm('Cancel this appointment?')"><i class="fas fa-times"></i> Cancel</a>
-                                    <a href="?action=noshow&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="action-btn btn-noshow" onclick="return confirm('Mark patient as no-show?')"><i class="fas fa-user-slash"></i> No Show</a>
-                                <?php endif; ?>
-                                <?php if ($apt['status'] == 'confirmed'): ?>
-                                    <a href="?action=complete&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="action-btn btn-complete" onclick="return confirm('Mark as completed?')"><i class="fas fa-check-double"></i> Complete</a>
-                                    <a href="?action=noshow&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="action-btn btn-noshow" onclick="return confirm('Mark patient as no-show?')"><i class="fas fa-user-slash"></i> No Show</a>
-                                    <a href="?action=cancel&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="action-btn btn-cancel" onclick="return confirm('Cancel this appointment?')"><i class="fas fa-times"></i> Cancel</a>
-                                <?php endif; ?>
-                                <a href="print_ticket.php?id=<?php echo $apt['appointment_id']; ?>" class="print-ticket" target="_blank"><i class="fas fa-print"></i> Print</a>
-                            </td>
-                        </tr>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <tr class="empty-row"><td colspan="9"><i class="fas fa-calendar-times" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></i>No appointments found for this date.</td></tr>
-                <?php endif; ?>
-                </tbody>
-            </table>
-        </div>
-    </div>
-</body>
-</html>
