@@ -4,9 +4,9 @@ session_start();
 // 🔧 Database configuration - matching YOUR environment variable names
 $host     = getenv('DB_HOST') ?: '';
 $dbname   = getenv('DB_NAME') ?: '';
-$username = getenv('DB_USERNAME') ?: '';  // ✅ Fixed: was DB_USER, you use DB_USERNAME
+$username = getenv('DB_USERNAME') ?: '';  // ✅ Matches your env var: DB_USERNAME
 $password = getenv('DB_PASSWORD') ?: '';
-$port     = getenv('DB_PORT') ?: 25060;   // ✅ Added: fallback to DO default port
+$port     = getenv('DB_PORT') ?: 25060;   // ✅ Fallback to DigitalOcean MySQL default port
 
 // 🔍 Debug mode: uncomment temporarily to verify env vars are loading
 // if (!$host || !$dbname || !$username || !$password) {
@@ -24,21 +24,24 @@ try {
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,            // Return associative arrays
         PDO::ATTR_EMULATE_PREPARES   => false,                       // Use real prepared statements
         PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '+00:00'",  // Optional: set timezone
+        PDO::ATTR_TIMEOUT            => 10,                          // ✅ Increased timeout to prevent 503
     ];
 
     // 🔐 SSL Configuration for DigitalOcean Managed MySQL
-    // DO requires SSL connections. We handle this safely:
+    // DigitalOcean requires SSL connections for Managed Databases
     if (strpos($host, 'ondigitalocean.com') !== false) {
-        $caPath = '/etc/ssl/certs/digitalocean-ca.pem';
+        // ✅ Updated path to match your Dockerfile: ca-certificate.crt
+        $caPath = '/etc/ssl/certs/ca-certificate.crt';
         
-        // If CA cert exists in container, use it
+        // If CA cert exists in container, use it for secure connection
         if (file_exists($caPath)) {
             $options[PDO::MYSQL_ATTR_SSL_CA] = $caPath;
+            error_log("✅ Using DO CA certificate: $caPath");
         } 
-        // Fallback: disable cert verification (⚠️ only for testing!)
+        // ⚠️ Fallback: disable cert verification (FOR TESTING ONLY - remove in production)
         else {
             $options[PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT] = false;
-            error_log("⚠️ Warning: DigitalOcean CA cert not found at $caPath - SSL verification disabled");
+            error_log("⚠️ Warning: CA cert not found at $caPath - SSL verification disabled (testing mode)");
         }
     }
 
@@ -46,14 +49,14 @@ try {
     $pdo = new PDO($dsn, $username, $password, $options);
     
 } catch(PDOException $e) {
-    // Log error securely (visible in App Platform logs)
+    // Log error securely (visible in DigitalOcean App Platform logs)
     error_log("🔴 DB Connection Failed: " . $e->getMessage());
     error_log("   Host: $host, Port: $port, DB: $dbname, User: $username");
     
-    // ⚠️ TEMPORARY: Show detailed error for debugging (REMOVE IN PRODUCTION)
+    // ⚠️ TEMPORARY: Show detailed error for debugging (REMOVE AFTER FIXING)
     die("DB Error: " . $e->getMessage());
     
-    // ✅ PRODUCTION: Use this instead after fixing:
+    // ✅ PRODUCTION: Use this instead after confirming it works:
     // die("Database connection failed. Please try again later.");
 }
 ?>
