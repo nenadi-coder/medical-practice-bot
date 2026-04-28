@@ -12,7 +12,7 @@ $password = getenv('DB_PASSWORD') ?: '';  // ⚠️ SET THIS IN YOUR ENVIRONMENT
 
 try {
     $pdo = new PDO(
-        "mysql:host=$host;dbname=$dbname;charset=utf8mb4",
+        "mysql:host=$host;port=25060;dbname=$dbname;charset=utf8mb4",
         $username,
         $password
     );
