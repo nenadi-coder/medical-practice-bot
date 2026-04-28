@@ -491,7 +491,7 @@ if ($is_cb) {
             'queue' => fn() => showQueueStatus($cid, $mid, $bot_token, $pdo, $patient),
             'profile' => fn() => showProfile($cid, $mid, $bot_token, $patient),
             'askappointment' => fn() => startBookingFlow($cid, $mid, $bot_token, $pdo, $uid),
-            'help' => fn() => showHelp($cid, $mid, $bot_token)
+            'help' => fn() => showHelp($cid, $mid, $bot_token),
         ];
         if (isset($handlers[$cmd])) {
             $handlers[$cmd]();
