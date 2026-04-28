@@ -8,10 +8,19 @@ RUN apt-get update && apt-get install -y \
     libcurl4-openssl-dev \
     libzip-dev \
     unzip \
+    ca-certificates \
     && docker-php-ext-install pdo_mysql mysqli zip \
     && a2enmod rewrite \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# 🔐 Add DigitalOcean CA Certificate for MySQL SSL connections
+# Saved as ca-certificate.crt per your requirement
+RUN mkdir -p /etc/ssl/certs && \
+    curl -fsSL -o /etc/ssl/certs/ca-certificate.crt \
+    https://www.digitalocean.com/legal/app-platform/ssl-certs/digitalocean-ca.pem && \
+    chmod 644 /etc/ssl/certs/ca-certificate.crt && \
+    echo "✅ DO CA cert installed: /etc/ssl/certs/ca-certificate.crt"
 
 # Allow .htaccess overrides and serve subdirectories properly
 RUN sed -i '/<Directory \/var\/www\/html>/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' \
