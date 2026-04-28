@@ -7,31 +7,44 @@
  * ✅ Compatible with patient/nurse dashboard session vars
  * ✅ Clickable inline keyboards + message editing
  * ✅ Proper error handling + PDO validation
+ * ✅ Fixed: output buffering, match() side effects, security, path resolution
  */
 
-require_once 'includes/config.php';
+// 🔧 FIX 1: Clean output buffering for Telegram webhook compliance
+ob_clean();
+header('Content-Type: text/plain'); // Telegram accepts plain text responses
+ini_set('display_errors', 0); // Never expose errors to webhook
+ini_set('log_errors', 1);
+error_reporting(E_ALL);
+
+// 🔧 FIX 2: Use absolute path for config include
+require_once __DIR__ . '/includes/config.php';
 
 // ========== 1. SECURE TOKEN & PDO VALIDATION ==========
+// 🔧 FIX 3: Use consistent env var loading (matches config.php style)
 $bot_token = getenv('TELEGRAM_BOT_TOKEN');
+
+// 🔧 FIX 4: REMOVE HARDCODED FALLBACK TOKEN (security critical)
 if (empty($bot_token)) {
-    // Fallback for testing ONLY - REMOVE IN PRODUCTION
-    $bot_token = '8330456846:AAFYmkLZFCx1qw4n2sQa5eRCJBO26NV1QYM';
-    error_log('[BOT] WARNING: Using fallback token. Set TELEGRAM_BOT_TOKEN env var.');
+    error_log('[BOT] CRITICAL: TELEGRAM_BOT_TOKEN environment variable not set');
+    http_response_code(500);
+    exit('Configuration error');
 }
+
 if (!preg_match('/^\d+:[A-Za-z0-9_-]{35,}$/', $bot_token)) {
     error_log('[BOT] CRITICAL: Invalid bot token format');
     http_response_code(500);
     exit('Configuration error');
 }
 
-// PDO validation - required before ANY database use
+// PDO validation - config.php should have set $pdo, but verify
 if (!isset($pdo) || !($pdo instanceof PDO)) {
-    error_log('[BOT] CRITICAL: Database connection ($pdo) not available');
+    error_log('[BOT] CRITICAL: Database connection ($pdo) not available from config.php');
     http_response_code(500);
     exit('Service unavailable');
 }
 
-// PDO hardening
+// PDO hardening (config.php sets some, but ensure consistency)
 $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 $pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
 $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
@@ -68,7 +81,7 @@ function editMessageText(int $chat_id, int $mid, string $text, string $token, ?s
     $data = ['chat_id' => $chat_id, 'message_id' => $mid, 'text' => $text, 'parse_mode' => 'Markdown', 'disable_web_page_preview' => true];
     if ($keyboard) $data['reply_markup'] = $keyboard;
     $raw = telegramRequest("https://api.telegram.org/bot{$token}/editMessageText", $data, true);
-    return $raw !== false || strpos($raw, 'message is not modified') !== false;
+    return $raw !== false || (is_string($raw) && strpos($raw, 'message is not modified') !== false);
 }
 
 function sendOrEdit(int $chat_id, ?int $mid, string $text, string $token, ?string $kb): bool {
@@ -83,7 +96,7 @@ function answerCallback(string $cb_id, string $token, string $txt = '', bool $al
     ]);
 }
 
-// ========== 3. DATA HELPERS (Using EXACT schema columns) ==========
+// ========== 3. DATA HELPERS (Using EXACT schema columns from shifacenter.sql) ==========
 function parseDateInput(string $input): DateTime|false {
     $input = trim($input);
     foreach (['Y-m-d' => '/^\d{4}-\d{2}-\d{2}$/', 'd-m-Y' => '/^\d{2}-\d{2}-\d{4}$/', 'd/m/Y' => '#^\d{2}/\d{2}/\d{4}$#'] as $fmt => $pat) {
@@ -403,7 +416,7 @@ function handleBookingConfirmation(int $cid, ?int $mid, string $tok, PDO $pdo, a
         $q->execute([$d['date'], $d['time'], $d['doctor_id']]);
         $qnum = (int)$q->fetchColumn();
         
-        // Insert using EXACT columns from your appointments table
+        // Insert using EXACT columns from your appointments table (shifacenter.sql)
         $pdo->prepare("INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, queue_number, status, send_sms, created_at) VALUES (?, ?, ?, ?, ?, 'scheduled', 1, NOW())")
             ->execute([$p['patient_id'], $d['doctor_id'], $d['date'], $d['time'], $qnum]);
         
@@ -435,7 +448,7 @@ $uid = (int)$src['from']['id'];
 $mid = (int)($src['message_id'] ?? 0);
 $txt = trim($src['text'] ?? $src['data'] ?? '');
 
-// Fetch patient using EXACT columns from patients table
+// Fetch patient using EXACT columns from patients table (shifacenter.sql)
 try {
     $pat = $pdo->prepare("SELECT patient_id, first_name, last_name, email, created_at FROM patients WHERE telegram_user_id=? LIMIT 1");
     $pat->execute([$uid]); 
@@ -446,7 +459,7 @@ try {
     exit('Database error');
 }
 
-// Fetch session using EXACT columns from telegram_sessions
+// Fetch session using EXACT columns from telegram_sessions (shifacenter.sql)
 try {
     $sess_stmt = $pdo->prepare("SELECT step, data_json, updated_at FROM telegram_sessions WHERE telegram_user_id=? LIMIT 1");
     $sess_stmt->execute([$uid]); 
@@ -486,15 +499,26 @@ if ($is_cb) {
         }
     }
     
-    // Booking flow buttons
-    match(true) {
-        str_starts_with($cb, 'doctor:') => handleDoctorSelection((int)substr($cb,7), $cid, $mid, $bot_token, $pdo, $patient, $uid),
-        str_starts_with($cb, 'date:') => handleDateSelection(substr($cb,5), $cid, $mid, $bot_token, $pdo, $patient, $uid, $session),
-        str_starts_with($cb, 'time:') => handleTimeSelection(substr($cb,5), $cid, $mid, $bot_token, $pdo, $patient, $uid, $session),
-        $cb === 'confirm:book' => handleBookingConfirmation($cid, $mid, $bot_token, $pdo, $patient, $uid, $session),
-        $cb === 'booking:cancel' => ($pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id=?")->execute([$uid]), showMainMenu($cid, $mid, $bot_token, $patient, "❌ Booking cancelled")),
-        default => editMessageText($cid, $mid, "⚠️ Invalid action.", $bot_token)
-    };
+    // 🔧 FIX 5: Booking flow buttons - replaced problematic match() with if/elseif
+    if (str_starts_with($cb, 'doctor:')) {
+        handleDoctorSelection((int)substr($cb,7), $cid, $mid, $bot_token, $pdo, $patient, $uid);
+    } elseif (str_starts_with($cb, 'date:')) {
+        handleDateSelection(substr($cb,5), $cid, $mid, $bot_token, $pdo, $patient, $uid, $session);
+    } elseif (str_starts_with($cb, 'time:')) {
+        handleTimeSelection(substr($cb,5), $cid, $mid, $bot_token, $pdo, $patient, $uid, $session);
+    } elseif ($cb === 'confirm:book') {
+        handleBookingConfirmation($cid, $mid, $bot_token, $pdo, $patient, $uid, $session);
+    } elseif ($cb === 'booking:cancel') {
+        // 🔧 FIX 6: Explicit block instead of comma operator in match()
+        try {
+            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id=?")->execute([$uid]);
+        } catch (PDOException $e) {
+            error_log('[BOT] cancel session delete error: ' . $e->getMessage());
+        }
+        showMainMenu($cid, $mid, $bot_token, $patient, "❌ Booking cancelled");
+    } else {
+        editMessageText($cid, $mid, "⚠️ Invalid action.", $bot_token);
+    }
     
     http_response_code(200); exit();
 }
@@ -524,7 +548,7 @@ if (!$patient) {
         }
         
         try {
-            // Lookup by EMAIL only (using your UNIQUE email constraint)
+            // Lookup by EMAIL only (using your UNIQUE email constraint from shifacenter.sql)
             $f = $pdo->prepare("SELECT patient_id, first_name, last_name, email FROM patients WHERE email=? LIMIT 1");
             $f->execute([$email]); 
             $found = $f->fetch();
@@ -537,7 +561,7 @@ if (!$patient) {
         if ($found) {
             try {
                 $pdo->beginTransaction();
-                // Update using EXACT columns: telegram_user_id, telegram_linked_at
+                // Update using EXACT columns: telegram_user_id, telegram_linked_at (from shifacenter.sql)
                 $pdo->prepare("UPDATE patients SET telegram_user_id=?, telegram_linked_at=NOW() WHERE patient_id=?")->execute([$uid, $found['patient_id']]);
                 $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id=?")->execute([$uid]);
                 $pdo->commit();
