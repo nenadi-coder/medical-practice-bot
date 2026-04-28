@@ -1,4 +1,4 @@
-# Use the official PHP 8.2 Apache image
+# Use the official PHP .2 Apache image
 FROM php:8.2-apache
 
 # Install system dependencies and PHP extensions
@@ -14,13 +14,10 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# 🔐 Add DigitalOcean CA Certificate for MySQL SSL connections
-# Saved as ca-certificate.crt per your requirement
-RUN mkdir -p /etc/ssl/certs && \
-    curl -fsSL -o /etc/ssl/certs/ca-certificate.crt \
-    https://www.digitalocean.com/legal/app-platform/ssl-certs/digitalocean-ca.pem && \
-    chmod 644 /etc/ssl/certs/ca-certificate.crt && \
-    echo "✅ DO CA cert installed: /etc/ssl/certs/ca-certificate.crt"
+# 🔐 DigitalOcean CA Certificate for MySQL SSL
+# ⚠️ You must download ca-certificate.crt from DO Dashboard and place in repo root
+COPY ca-certificate.crt /etc/ssl/certs/ca-certificate.crt
+RUN chmod 644 /etc/ssl/certs/ca-certificate.crt
 
 # Allow .htaccess overrides and serve subdirectories properly
 RUN sed -i '/<Directory \/var\/www\/html>/,/<\/Directory>/ s/AllowOverride None/AllowOverride All/' \
