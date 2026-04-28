@@ -5,7 +5,7 @@ session_start();
 $host = getenv('DB_HOST') ?: 'db-mysql-nyc3-10499-do-user-36185384-0.e.db.ondigitalocean.com';
 $dbname = getenv('DB_NAME') ?: 'defaultdb';
 $username = getenv('DB_USER') ?: 'doadmin';
-$password = getenv('DB_PASSWORD') ?: '';  // ⚠️ SET THIS IN YOUR ENVIRONMENT
+$password = getenv('DB_PASSWORD') ?: 'AVNS_bO2G7PtVCtrA6uXCiYp';  // ⚠️ SET THIS IN YOUR ENVIRONMENT
 
 // If no environment variable, you MUST set it manually (but NOT in version control)
 // $password = 'YOUR_PASSWORD_HERE';
