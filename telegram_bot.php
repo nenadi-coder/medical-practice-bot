@@ -15,7 +15,7 @@ require_once __DIR__ . '/includes/config.php';
 $bot_token = getenv('TELEGRAM_BOT_TOKEN');
 if (empty($bot_token)) {
     // Fallback for testing ONLY - REMOVE IN PRODUCTION
-    $bot_token = '8330456846:AAHSmyKZrvCL5yLqpHjynBMqC6tM2u9k6N8';
+    $bot_token = '8330456846:AAFYmkLZFCx1qw4n2sQa5eRCJBO26NV1QYM';
     error_log('[BOT] WARNING: Using fallback token. Set TELEGRAM_BOT_TOKEN env var.');
 }
 if (!preg_match('/^\d+:[A-Za-z0-9_-]{35,}$/', $bot_token)) {
