@@ -1,5 +1,5 @@
 <?php
-require_once '../includes/config.php';
+/*require_once '../includes/config.php';
 
 if (isset($_SESSION['patient_id'])) {
     header('Location: dashboard.php');
@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $error = "Invalid email or password";
         }
     }
-}
+}*/
 ?>
 
 <!DOCTYPE html>
