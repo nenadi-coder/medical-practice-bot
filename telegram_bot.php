@@ -6,7 +6,7 @@ $bot_token = getenv('TELEGRAM_BOT_TOKEN') ?: '';
 
 // FALLBACK - REMOVE IN PRODUCTION
 if (empty($bot_token)) {
-    $bot_token = '8330456846:AAHSmyKZrvCL5yLqpHjynBMqC6tM2u9k6N8';
+    $bot_token = '8330456846:AAFYmkLZFCx1qw4n2sQa5eRCJBO26NV1QYM';
 }
 
 $content = file_get_contents('php://input');
