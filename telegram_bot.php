@@ -9,7 +9,7 @@
  * ✅ Proper error handling + PDO validation
  */
 
-require_once __DIR__ . '/includes/config.php';
+require_once 'includes/config.php';
 
 // ========== 1. SECURE TOKEN & PDO VALIDATION ==========
 $bot_token = getenv('TELEGRAM_BOT_TOKEN');
