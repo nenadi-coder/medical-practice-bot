@@ -312,7 +312,7 @@ if (!$stats) {
         <h1><i class="fas fa-stethoscope"></i>Shifa Medical Center</h1>
         <div class="user-info">
             <i class="fas fa-user-md" style="color: #f56565;"></i>
-            <span>Welcome, <span class="doctor-name">Dr. <?php echo htmlspecialchars($_SESSION['doctor_name']); ?></span></span>
+            <span>Welcome, <span class="doctor-name"> <?php echo htmlspecialchars($_SESSION['doctor_name']); ?></span></span>
             <a href="logout.php" class="logout"><i class="fas fa-sign-out-alt"></i> Logout</a>
         </div>
     </div>
