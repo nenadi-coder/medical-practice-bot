@@ -402,7 +402,7 @@
                 <i class="fas fa-phone-alt"></i> <span>0567890123</span>
             </div>
             <div class="contact-item hours">
-                <i class="far fa-clock"></i> <span>Sun-Thu: 8AM–4PM</span>
+                <i class="far fa-clock"></i> <span>Sun-Thu: 8AM–5PM</span>
             </div>
             <div class="contact-item">
                 <i class="fas fa-map-marker-alt"></i> <span>123 Health Street, Medical City</span>
@@ -455,7 +455,7 @@
         <div class="footer-right">
             <span><i class="fas fa-map-pin"></i> 123 Health Street, Medical City</span>
             <span><i class="fas fa-phone-alt"></i> 0567890123</span>
-            <span><i class="far fa-calendar-alt"></i> Sun-Thu: 8AM–4PM</span>
+            <span><i class="far fa-calendar-alt"></i> Sun-Thu: 8AM–5PM</span>
         </div>
     </div>
     <div class="copyright">
