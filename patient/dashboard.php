@@ -364,6 +364,16 @@ $appointments = $stmt->fetchAll();
             margin-top: 8px;
         }
 
+        /* ✅ NEW: Pending confirmation message style */
+        .pending-message {
+            background: #fff8e1;
+            padding: 8px 12px;
+            border-radius: 0.75rem;
+            color: #f59e0b;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+
         .appointment-actions {
             display: flex;
             gap: 0.75rem;
@@ -499,20 +509,30 @@ $appointments = $stmt->fetchAll();
                                 
                                 <div class="queue-info">
                                     <div class="detail-item"><i class="fas fa-ticket-alt"></i> Queue #: <strong><?php echo htmlspecialchars($appointment['queue_number']); ?></strong></div>
-                                    <div class="queue-position">
-                                        📊 Position: <?php echo htmlspecialchars($people_ahead + 1); ?> of <?php echo htmlspecialchars($total_waiting); ?> waiting
-                                    </div>
-                                    <div class="detail-item"><i class="fas fa-users"></i> People ahead: <?php echo htmlspecialchars($people_ahead); ?></div>
                                     
-                                    <?php if ($people_ahead > 0): ?>
-                                        <div class="wait-time">
-                                            <i class="fas fa-hourglass-half"></i> Estimated wait: ~<?php echo htmlspecialchars($people_ahead * 15); ?> minutes
-                                            <br><small>(based on 15 min per patient)</small>
+                                    <!-- ✅ UPDATED: Different messages for scheduled vs confirmed -->
+                                    <?php if ($appointment['status'] == 'scheduled'): ?>
+                                        <!-- Scheduled = waiting for nurse confirmation -->
+                                        <div class="pending-message">
+                                            <i class="fas fa-hourglass-start"></i> Wait for nurse confirmation
                                         </div>
-                                    <?php else: ?>
-                                        <div class="next-message">
-                                            <i class="fas fa-bell"></i> You're NEXT! Please be ready when called.
+                                    <?php elseif ($appointment['status'] == 'confirmed'): ?>
+                                        <!-- Confirmed = show queue position and wait estimates -->
+                                        <div class="queue-position">
+                                            📊 Position: <?php echo htmlspecialchars($people_ahead + 1); ?> of <?php echo htmlspecialchars($total_waiting); ?> waiting
                                         </div>
+                                        <div class="detail-item"><i class="fas fa-users"></i> People ahead: <?php echo htmlspecialchars($people_ahead); ?></div>
+                                        
+                                        <?php if ($people_ahead > 0): ?>
+                                            <div class="wait-time">
+                                                <i class="fas fa-hourglass-half"></i> Estimated wait: ~<?php echo htmlspecialchars($people_ahead * 15); ?> minutes
+                                                <br><small>(based on 15 min per patient)</small>
+                                            </div>
+                                        <?php else: ?>
+                                            <div class="next-message">
+                                                <i class="fas fa-bell"></i> You're NEXT! Please be ready when called.
+                                            </div>
+                                        <?php endif; ?>
                                     <?php endif; ?>
                                 </div>
                             <?php else: ?>
