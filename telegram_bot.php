@@ -10,6 +10,8 @@
  * ✅ Cancelled appointments excluded from queue
  * ✅ Error logging to file
  * ✅ HTTP 200 responses to Telegram
+ * ✅ NEW: Unlink Account feature with confirmation flow
+ * ✅ NEW: Clinic hours enforcement (Sun-Thu, 8AM-5PM)
  */
 
 require_once __DIR__ . '/includes/config.php';
@@ -168,8 +170,43 @@ function parseDateInput($input) {
     return false;
 }
 
+// ✅ NEW: Check if date is a working day (Sunday=0 to Thursday=4)
+function isWorkingDay($dateStr) {
+    $date = is_string($dateStr) ? new DateTime($dateStr) : $dateStr;
+    $dayOfWeek = (int)$date->format('N'); // 1=Monday, 7=Sunday
+    // Convert to 0=Sunday format for easier checking
+    $dayNum = ($dayOfWeek === 7) ? 0 : $dayOfWeek;
+    // Valid: Sunday(0), Monday(1), Tuesday(2), Wednesday(3), Thursday(4)
+    return in_array($dayNum, [0, 1, 2, 3, 4]);
+}
+
+// ✅ NEW: Get next available working day
+function getNextWorkingDay($fromDate = null) {
+    $date = $fromDate ? clone $fromDate : new DateTime();
+    $date->setTime(0, 0, 0);
+    
+    // If today is a working day and we're checking from today, return today
+    // Otherwise, keep adding days until we find a working day
+    $maxAttempts = 14; // Prevent infinite loop
+    $attempts = 0;
+    
+    while ($attempts < $maxAttempts) {
+        if (isWorkingDay($date)) {
+            return $date;
+        }
+        $date->modify('+1 day');
+        $attempts++;
+    }
+    return null; // Should never happen with 14-day window
+}
+
 // ========== ENHANCED: Filter Past Times for Today ==========
 function getAvailableTimeSlots($pdo, $date, $doctor_id = 1) {
+    // ✅ NEW: Return empty if not a working day
+    if (!isWorkingDay($date)) {
+        return [];
+    }
+    
     $bookedSlots = [];
     try {
         $stmt = $pdo->prepare("SELECT appointment_time FROM appointments WHERE appointment_date = ? AND doctor_id = ? AND status NOT IN ('cancelled', 'no-show')");
@@ -182,6 +219,7 @@ function getAvailableTimeSlots($pdo, $date, $doctor_id = 1) {
         return [];
     }
     
+    // ✅ Clinic hours: 8:00 AM to 5:00 PM (last slot starts at 4:30 PM)
     $allSlots = [
         '08:30:00' => '8:30 AM', '09:00:00' => '9:00 AM', '09:30:00' => '9:30 AM',
         '10:00:00' => '10:00 AM', '10:30:00' => '10:30 AM', '11:00:00' => '11:00 AM',
@@ -353,7 +391,11 @@ if (isset($update['callback_query'])) {
             $response .= "Name: " . htmlspecialchars($patient['first_name'] . ' ' . $patient['last_name']) . "\n";
             $response .= "Email: " . htmlspecialchars($patient['email']) . "\n";
             $response .= "Member since: " . $dt->format('F j, Y');
-            $kb = createKeyboard([[['text' => '🏠 Back to Menu', 'callback_data' => 'cmd:home']]]);
+            // ✅ UPDATED: Added Unlink Account button
+            $kb = createKeyboard([
+                [['text' => '🏠 Back to Menu', 'callback_data' => 'cmd:home']],
+                [['text' => '🔓 Unlink Account', 'callback_data' => 'cmd:unlink_confirm']]
+            ]);
             editMessageText($chat_id, $message_id, $response, $bot_token, $kb);
         } catch (Exception $e) {
             $log("Error loading profile: " . $e->getMessage());
@@ -362,19 +404,29 @@ if (isset($update['callback_query'])) {
         
     } elseif ($callback_data === 'cmd:askappointment') {
         // ✅ SINGLE DOCTOR FLOW: Skip doctor selection, go straight to date
-        $response = "🏥 *Book with Dr. John*\n\n*Step 1: Select a date*\n\n📅 Tap below or type manually:";
+        $response = "🏥 *Book with Dr. John*\n\n*Step 1: Select a date*\n\n📅 *Clinic Hours:* Sunday-Thursday, 8AM-5PM\n\nTap a working day below:";
         
         $buttons = [];
         $row = [];
-        for ($i = 1; $i <= 7; $i++) {
-            $date = new DateTime("+$i days");
-            $val = $date->format('Y-m-d');
-            $lbl = $date->format('D, M j');
-            $row[] = ['text' => $lbl, 'callback_data' => "date:{$val}"];
-            if (count($row) === 2) {
-                $buttons[] = $row;
-                $row = [];
+        $added = 0;
+        // Show next 7 working days (skip Fri/Sat)
+        $startDate = new DateTime();
+        $startDate->modify('+1 day'); // Start from tomorrow
+        $count = 0;
+        
+        while ($added < 7 && $count < 21) { // Check up to 21 days to find 7 working days
+            if (isWorkingDay($startDate)) {
+                $val = $startDate->format('Y-m-d');
+                $lbl = $startDate->format('D, M j');
+                $row[] = ['text' => $lbl, 'callback_data' => "date:{$val}"];
+                $added++;
+                if (count($row) === 2) {
+                    $buttons[] = $row;
+                    $row = [];
+                }
             }
+            $startDate->modify('+1 day');
+            $count++;
         }
         if (!empty($row)) $buttons[] = $row;
         $buttons[] = [['text' => '◀️ More', 'callback_data' => 'date:more'], ['text' => '🔄 Cancel', 'callback_data' => 'cmd:home']];
@@ -397,40 +449,91 @@ if (isset($update['callback_query'])) {
         $response .= "• `/queue` - Check queue position\n";
         $response .= "• `/profile` - View profile\n";
         $response .= "• `/askappointment` - Book with Dr. John\n";
+        $response .= "• `/unlink` - Disconnect your Telegram account\n";  // ✅ ADDED
         $response .= "• `/help` - Show this help\n\n";
+        $response .= "🏥 *Clinic Hours:* Sunday-Thursday, 8AM-5PM\n";
         $response .= "📌 *Reminders*: You'll receive appointment reminders at 7 AM.";
         $kb = createKeyboard([[['text' => '🏥 Book', 'callback_data' => 'cmd:askappointment'], ['text' => '📋 Appointments', 'callback_data' => 'cmd:appointments'], ['text' => '🎫 Queue', 'callback_data' => 'cmd:queue']]]);
         editMessageText($chat_id, $message_id, $response, $bot_token, $kb);
         
     } elseif ($callback_data === 'cmd:home') {
-        $response = "🏥 *Shifa Medical Center*\n\nHello, " . htmlspecialchars($patient['first_name']) . "! 👋\n\nHow can we help you today?";
+        $response = "🏥 *Shifa Medical Center*\n\nHello, " . htmlspecialchars($patient['first_name']) . "! 👋\n\n*Clinic Hours:* Sunday-Thursday, 8AM-5PM\n\nHow can we help you today?";
         $kb = createKeyboard([
             [['text' => '🏥 Book Appointment', 'callback_data' => 'cmd:askappointment'], ['text' => '📋 My Appointments', 'callback_data' => 'cmd:appointments']],
             [['text' => '📅 Next Visit', 'callback_data' => 'cmd:next'], ['text' => '🎫 Queue Status', 'callback_data' => 'cmd:queue']],
             [['text' => '👤 My Profile', 'callback_data' => 'cmd:profile'], ['text' => '❓ Help', 'callback_data' => 'cmd:help']]
+            // ✅ OPTIONAL: Uncomment below to add Unlink to main menu
+            // , [['text' => '🔓 Unlink Account', 'callback_data' => 'cmd:unlink_confirm']]
         ]);
         editMessageText($chat_id, $message_id, $response, $bot_token, $kb);
+        
+    // ✅ UNLINK ACCOUNT - CONFIRMATION SCREEN
+    } elseif ($callback_data === 'cmd:unlink_confirm') {
+        $response = "⚠️ *Unlink Account?*\n\n";
+        $response .= "This will disconnect your Telegram from your patient profile.\n\n";
+        $response .= "• You'll need to re-link with /start to book appointments\n";
+        $response .= "• Your medical records remain safe in our system\n\n";
+        $response .= "Proceed with unlinking?";
+        
+        $kb = createKeyboard([
+            [['text' => '✅ Yes, Unlink', 'callback_data' => 'confirm:unlink'], ['text' => '❌ Cancel', 'callback_data' => 'cmd:profile']],
+            [['text' => '🏠 Main Menu', 'callback_data' => 'cmd:home']]
+        ]);
+        editMessageText($chat_id, $message_id, $response, $bot_token, $kb);
+        
+    // ✅ UNLINK ACCOUNT - EXECUTE
+    } elseif ($callback_data === 'confirm:unlink') {
+        try {
+            // Remove Telegram link from patient record
+            $pdo->prepare("UPDATE patients SET telegram_user_id = NULL, telegram_linked_at = NULL WHERE telegram_user_id = ?")
+                ->execute([$telegram_user_id]);
+            
+            // Clear any active sessions
+            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+            
+            $log("User $telegram_user_id unlinked account");
+            
+            $response = "✅ *Account Unlinked*\n\n";
+            $response .= "Your Telegram is no longer connected to your patient profile.\n\n";
+            $response .= "To link again anytime, type `/start` and enter your email.";
+            
+            $kb = createKeyboard([[['text' => '🚀 Link Again', 'callback_data' => 'cmd:home']]]);
+            editMessageText($chat_id, $message_id, $response, $bot_token, $kb);
+            
+        } catch (PDOException $e) {
+            $log("Unlink failed: " . $e->getMessage());
+            editMessageText($chat_id, $message_id, "❌ Error unlinking. Please try again.", $bot_token);
+        }
         
     } elseif (strpos($callback_data, 'date:') === 0) {
         $dateVal = substr($callback_data, 5);
         
         if ($dateVal === 'more') {
-            // Show more dates (days 8-14)
+            // Show more working days (days 8-14 working days)
             $buttons = [];
             $row = [];
-            for ($i = 8; $i <= 14; $i++) {
-                $date = new DateTime("+$i days");
-                $val = $date->format('Y-m-d');
-                $lbl = $date->format('D, M j');
-                $row[] = ['text' => $lbl, 'callback_data' => "date:{$val}"];
-                if (count($row) === 2) {
-                    $buttons[] = $row;
-                    $row = [];
+            $added = 0;
+            $startDate = new DateTime();
+            $startDate->modify('+8 days'); // Start from day 8
+            $count = 0;
+            
+            while ($added < 7 && $count < 21) {
+                if (isWorkingDay($startDate)) {
+                    $val = $startDate->format('Y-m-d');
+                    $lbl = $startDate->format('D, M j');
+                    $row[] = ['text' => $lbl, 'callback_data' => "date:{$val}"];
+                    $added++;
+                    if (count($row) === 2) {
+                        $buttons[] = $row;
+                        $row = [];
+                    }
                 }
+                $startDate->modify('+1 day');
+                $count++;
             }
             if (!empty($row)) $buttons[] = $row;
             $buttons[] = [['text' => '🔙 Back', 'callback_data' => 'cmd:askappointment']];
-            editMessageText($chat_id, $message_id, "📅 *Select a date*\n\nChoose from below:", $bot_token, createKeyboard($buttons));
+            editMessageText($chat_id, $message_id, "📅 *Select a working day*\n\n*Clinic:* Sun-Thu, 8AM-5PM\n\nChoose from below:", $bot_token, createKeyboard($buttons));
             http_response_code(200);
             echo "OK";
             exit;
@@ -438,9 +541,18 @@ if (isset($update['callback_query'])) {
         
         $dateObj = DateTime::createFromFormat('Y-m-d', $dateVal);
         $tomorrow = new DateTime('tomorrow');
+        $today = new DateTime('today');
         
-        // Validate date
-        if (!$dateObj || ($dateObj < $tomorrow && $dateObj->format('Y-m-d') !== (new DateTime('today'))->format('Y-m-d'))) {
+        // ✅ NEW: Validate working day
+        if (!$dateObj || !isWorkingDay($dateObj)) {
+            editMessageText($chat_id, $message_id, "❌ *Clinic Closed*\n\nWe're only open Sunday-Thursday.\n\nPlease select a working day:", $bot_token, createKeyboard([[['text' => '📅 Try Again', 'callback_data' => 'cmd:askappointment']]]));
+            http_response_code(200);
+            echo "OK";
+            exit;
+        }
+        
+        // Validate date range
+        if ($dateObj < $tomorrow && $dateObj->format('Y-m-d') !== $today->format('Y-m-d')) {
             editMessageText($chat_id, $message_id, "❌ Please select today or a future date.", $bot_token, createKeyboard([[['text' => '📅 Try Again', 'callback_data' => 'booking:date']]]));
             http_response_code(200);
             echo "OK";
@@ -466,11 +578,12 @@ if (isset($update['callback_query'])) {
         $session_data['date'] = $selected_date;
         $session_data['display_date'] = $display_date;
         
-        // Get available slots (with past-time filtering)
+        // Get available slots (with past-time filtering & working day check)
         $availableSlots = getAvailableTimeSlots($pdo, $selected_date, 1); // doctor_id = 1
         
         if (empty($availableSlots)) {
-            editMessageText($chat_id, $message_id, "❌ No slots on *{$display_date}*. Try another date:", $bot_token, createKeyboard([[['text' => '📅 Pick Another', 'callback_data' => 'date:more']], [['text' => '🔄 Cancel', 'callback_data' => 'cmd:home']]]));
+            $reason = !isWorkingDay($selected_date) ? "Clinic is closed on " . $dateObj->format('l') . "s" : "No slots available";
+            editMessageText($chat_id, $message_id, "❌ {$reason} on *{$display_date}*. Try another date:", $bot_token, createKeyboard([[['text' => '📅 Pick Another', 'callback_data' => 'date:more']], [['text' => '🔄 Cancel', 'callback_data' => 'cmd:home']]]));
             http_response_code(200);
             echo "OK";
             exit;
@@ -487,7 +600,7 @@ if (isset($update['callback_query'])) {
         }
         
         // Show time slots
-        $response = "📅 *{$display_date}*\n\n⏰ *Select a time slot*:";
+        $response = "📅 *{$display_date}*\n\n⏰ *Select a time slot*\n\n*Clinic Hours:* 8AM-5PM";
         $buttons = [];
         $row = [];
         foreach ($availableSlots as $slot) {
@@ -678,19 +791,28 @@ if (isset($update['callback_query'])) {
             $log("Session load error: " . $e->getMessage());
         }
         
-        $response = "📅 *Select a date*\n\n📅 Tap below or type manually:";
+        $response = "📅 *Select a working day*\n\n*Clinic Hours:* Sunday-Thursday, 8AM-5PM\n\n📅 Tap below or type manually:";
         
         $buttons = [];
         $row = [];
-        for ($i = 1; $i <= 7; $i++) {
-            $date = new DateTime("+$i days");
-            $val = $date->format('Y-m-d');
-            $lbl = $date->format('D, M j');
-            $row[] = ['text' => $lbl, 'callback_data' => "date:{$val}"];
-            if (count($row) === 2) {
-                $buttons[] = $row;
-                $row = [];
+        $added = 0;
+        $startDate = new DateTime();
+        $startDate->modify('+1 day');
+        $count = 0;
+        
+        while ($added < 7 && $count < 21) {
+            if (isWorkingDay($startDate)) {
+                $val = $startDate->format('Y-m-d');
+                $lbl = $startDate->format('D, M j');
+                $row[] = ['text' => $lbl, 'callback_data' => "date:{$val}"];
+                $added++;
+                if (count($row) === 2) {
+                    $buttons[] = $row;
+                    $row = [];
+                }
             }
+            $startDate->modify('+1 day');
+            $count++;
         }
         if (!empty($row)) $buttons[] = $row;
         $buttons[] = [['text' => '◀️ More', 'callback_data' => 'date:more'], ['text' => '🔄 Cancel', 'callback_data' => 'cmd:home']];
@@ -721,7 +843,7 @@ if (isset($update['callback_query'])) {
             exit;
         }
         
-        $response = "📅 *{$session_data['display_date']}*\n\n⏰ *Select a time slot*:";
+        $response = "📅 *{$session_data['display_date']}*\n\n⏰ *Select a time slot*:\n\n*Clinic Hours:* 8AM-5PM";
         
         $buttons = [];
         $row = [];
@@ -783,7 +905,7 @@ if (isset($update['message'])) {
     // ✅ Handle empty message (user just opened chat)
     if ($text === '' || $text === null) {
         $kb = createKeyboard([[['text' => '🚀 Get Started', 'callback_data' => 'cmd:home']]]);
-        sendMessage($chat_id, "👋 Welcome to Shifa Medical Center!\n\nTap below to begin:", $bot_token, $kb);
+        sendMessage($chat_id, "👋 Welcome to Shifa Medical Center!\n\n*Clinic Hours:* Sunday-Thursday, 8AM-5PM\n\nTap below to begin:", $bot_token, $kb);
         http_response_code(200);
         echo "OK";
         exit;
@@ -822,6 +944,7 @@ if (isset($update['message'])) {
             }
             
             $response = "🏥 *Welcome to Shifa Medical Center Bot!*\n\n";
+            $response .= "*Clinic Hours:* Sunday-Thursday, 8AM-5PM\n\n";
             $response .= "To link your account, enter your registered **email address**:\n\n";
             $response .= "*Example:* `lana@gmail.com`\n\n";
             $response .= "This instantly links your Telegram account.";
@@ -885,7 +1008,7 @@ if (isset($update['message'])) {
             }
         } else {
             $kb = createKeyboard([[['text' => '🚀 Get Started', 'callback_data' => 'cmd:home']]]);
-            sendMessage($chat_id, "👋 *Welcome!*\n\nTap below to link your account:", $bot_token, $kb);
+            sendMessage($chat_id, "👋 *Welcome!*\n\n*Clinic Hours:* Sunday-Thursday, 8AM-5PM\n\nTap below to link your account:", $bot_token, $kb);
         }
         
         http_response_code(200);
@@ -908,10 +1031,23 @@ if (isset($update['message'])) {
         $today = new DateTime('today');
         
         // Validate date
-        if ($dateObj && $dateObj >= $tomorrow) {
-            // Future date - OK
-        } elseif ($dateObj && $dateObj->format('Y-m-d') === $today->format('Y-m-d')) {
-            // Today - OK (past times filtered in getAvailableTimeSlots)
+        if (!$dateObj) {
+            sendMessage($chat_id, "❌ Invalid date format. Use YYYY-MM-DD, DD-MM-YYYY, or DD/MM/YYYY.", $bot_token);
+            http_response_code(200);
+            echo "OK";
+            exit;
+        }
+        
+        // ✅ NEW: Check if working day
+        if (!isWorkingDay($dateObj)) {
+            sendMessage($chat_id, "❌ *Clinic Closed*\n\nWe're only open Sunday-Thursday.\n\nPlease select a working day.", $bot_token);
+            http_response_code(200);
+            echo "OK";
+            exit;
+        }
+        
+        if ($dateObj >= $tomorrow || $dateObj->format('Y-m-d') === $today->format('Y-m-d')) {
+            // Valid date range
         } else {
             sendMessage($chat_id, "❌ Please select today or a future date.", $bot_token);
             http_response_code(200);
@@ -924,11 +1060,12 @@ if (isset($update['message'])) {
         $sess_data['date'] = $selected_date;
         $sess_data['display_date'] = $display_date;
         
-        // Get slots (with past-time filtering)
+        // Get slots (with past-time filtering & working day check)
         $availableSlots = getAvailableTimeSlots($pdo, $selected_date, 1);
         
         if (empty($availableSlots)) {
-            sendMessage($chat_id, "❌ No slots on {$display_date}. Try another date or type 'cancel'.", $bot_token);
+            $reason = !isWorkingDay($selected_date) ? "Clinic is closed on " . $dateObj->format('l') . "s" : "No slots available";
+            sendMessage($chat_id, "❌ {$reason} on {$display_date}. Try another date or type 'cancel'.", $bot_token);
             try {
                 $pdo->prepare("UPDATE telegram_sessions SET step = 'booking_date', data_json = ? WHERE telegram_user_id = ?")
                     ->execute([json_encode($sess_data), $telegram_user_id]);
@@ -949,6 +1086,7 @@ if (isset($update['message'])) {
         
         $response = "📅 *Date selected:* {$display_date}\n\n";
         $response .= "*Step 2: Select a time*\n\n";
+        $response .= "*Clinic Hours:* 8AM-5PM\n\n";
         $response .= "Available slots:\n";
         
         $num = 1;
@@ -1101,7 +1239,7 @@ if (isset($update['message'])) {
             $tomorrow = new DateTime('tomorrow');
             $today = new DateTime('today');
             
-            if ($newDate && ($newDate >= $tomorrow || $newDate->format('Y-m-d') === $today->format('Y-m-d'))) {
+            if ($newDate && isWorkingDay($newDate) && ($newDate >= $tomorrow || $newDate->format('Y-m-d') === $today->format('Y-m-d'))) {
                 $sess_data['date'] = $newDate->format('Y-m-d');
                 $sess_data['display_date'] = $newDate->format('l, F j, Y');
                 unset($sess_data['time'], $sess_data['display_time']);
@@ -1133,7 +1271,7 @@ if (isset($update['message'])) {
                 
                 sendMessage($chat_id, $response, $bot_token);
             } else {
-                sendMessage($chat_id, "❌ Type `confirm` to book, `cancel` to cancel, or enter a new date.", $bot_token);
+                sendMessage($chat_id, "❌ Type `confirm` to book, `cancel` to cancel, or enter a valid working date (Sun-Thu).", $bot_token);
             }
         }
         
@@ -1227,7 +1365,11 @@ if (isset($update['message'])) {
             $response .= "Name: " . htmlspecialchars($patient['first_name'] . ' ' . $patient['last_name']) . "\n";
             $response .= "Email: " . htmlspecialchars($patient['email']) . "\n";
             $response .= "Member since: " . $dt->format('F j, Y');
-            $kb = createKeyboard([[['text' => '🏠 Back', 'callback_data' => 'cmd:home']]]);
+            // ✅ UPDATED: Added Unlink Account button
+            $kb = createKeyboard([
+                [['text' => '🏠 Back', 'callback_data' => 'cmd:home']],
+                [['text' => '🔓 Unlink Account', 'callback_data' => 'cmd:unlink_confirm']]
+            ]);
             sendMessage($chat_id, $response, $bot_token, $kb);
         } catch (Exception $e) {
             $log("Error: " . $e->getMessage());
@@ -1236,19 +1378,28 @@ if (isset($update['message'])) {
         
     } elseif ($text === '/askappointment') {
         // ✅ SINGLE DOCTOR: Skip doctor list, go to date
-        $response = "🏥 *Book with Dr. John*\n\n*Step 1: Select date*\n\n📅 Tap below or type:";
+        $response = "🏥 *Book with Dr. John*\n\n*Step 1: Select date*\n\n📅 *Clinic Hours:* Sunday-Thursday, 8AM-5PM\n\n📅 Tap below or type:";
         
         $buttons = [];
         $row = [];
-        for ($i = 1; $i <= 7; $i++) {
-            $date = new DateTime("+$i days");
-            $val = $date->format('Y-m-d');
-            $lbl = $date->format('D, M j');
-            $row[] = ['text' => $lbl, 'callback_data' => "date:{$val}"];
-            if (count($row) === 2) {
-                $buttons[] = $row;
-                $row = [];
+        $added = 0;
+        $startDate = new DateTime();
+        $startDate->modify('+1 day');
+        $count = 0;
+        
+        while ($added < 7 && $count < 21) {
+            if (isWorkingDay($startDate)) {
+                $val = $startDate->format('Y-m-d');
+                $lbl = $startDate->format('D, M j');
+                $row[] = ['text' => $lbl, 'callback_data' => "date:{$val}"];
+                $added++;
+                if (count($row) === 2) {
+                    $buttons[] = $row;
+                    $row = [];
+                }
             }
+            $startDate->modify('+1 day');
+            $count++;
         }
         if (!empty($row)) $buttons[] = $row;
         $buttons[] = [['text' => '🏠 Cancel', 'callback_data' => 'cmd:home']];
@@ -1263,6 +1414,20 @@ if (isset($update['message'])) {
         
         sendMessage($chat_id, $response, $bot_token, createKeyboard($buttons));
         
+    // ✅ NEW: /unlink command handler
+    } elseif ($text === '/unlink') {
+        // Show unlink confirmation via inline keyboard
+        $response = "⚠️ *Unlink Account?*\n\n";
+        $response .= "This will disconnect your Telegram from your patient profile.\n\n";
+        $response .= "• You'll need to re-link with /start to book appointments\n";
+        $response .= "• Your medical records remain safe in our system\n\n";
+        $response .= "Tap below to confirm:";
+        
+        $kb = createKeyboard([
+            [['text' => '✅ Yes, Unlink', 'callback_data' => 'confirm:unlink'], ['text' => '❌ Cancel', 'callback_data' => 'cmd:home']]
+        ]);
+        sendMessage($chat_id, $response, $bot_token, $kb);
+        
     } elseif ($text === '/help') {
         $response = "❓ *Commands*\n\n";
         $response .= "• `/appointments` - View appointments\n";
@@ -1270,7 +1435,9 @@ if (isset($update['message'])) {
         $response .= "• `/queue` - Queue position\n";
         $response .= "• `/profile` - Your profile\n";
         $response .= "• `/askappointment` - Book with Dr. John\n";
+        $response .= "• `/unlink` - Disconnect your Telegram account\n";  // ✅ ADDED
         $response .= "• `/help` - This help\n\n";
+        $response .= "🏥 *Clinic Hours:* Sunday-Thursday, 8AM-5PM\n";
         $response .= "📌 Reminders at 7 AM.";
         $kb = createKeyboard([[['text' => '🏥 Book', 'callback_data' => 'cmd:askappointment'], ['text' => '📋 Appointments', 'callback_data' => 'cmd:appointments'], ['text' => '🎫 Queue', 'callback_data' => 'cmd:queue']]]);
         sendMessage($chat_id, $response, $bot_token, $kb);
