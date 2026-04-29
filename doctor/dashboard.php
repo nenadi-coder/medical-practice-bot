@@ -26,7 +26,7 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute([$doctor_id, $today]);
 $today_appointments = $stmt->fetchAll();
 
-// Get stats (optional: keep all statuses for overview, or filter to confirmed only)
+// Get stats for overview (optional: shows all statuses for context)
 $stats_sql = "SELECT 
               COUNT(*) as total,
               SUM(CASE WHEN status = 'scheduled' THEN 1 ELSE 0 END) as scheduled,
@@ -228,10 +228,7 @@ if (!$stats) {
             font-weight: 700;
             text-transform: uppercase;
         }
-        .status-scheduled { background: #e3f2fd; color: #1976d2; }
         .status-confirmed { background: #e8f5e8; color: #388e3c; }
-        .status-completed { background: #f3e5f5; color: #7b1fa2; }
-        .status-cancelled { background: #ffebee; color: #c62828; }
         .patient-details {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -361,6 +358,7 @@ if (!$stats) {
                             <i class="fas fa-user-circle" style="color: #f56565;"></i>
                             <?php echo htmlspecialchars($apt['patient_name']); ?>
                         </span>
+                        <!-- Always show Confirmed badge since we only fetch confirmed -->
                         <span class="status-badge status-confirmed">
                             <i class="fas fa-check-circle"></i>
                             Confirmed
