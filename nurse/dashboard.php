@@ -260,6 +260,13 @@ if (!$stats) {
         th { background: linear-gradient(95deg, #4f46e5, #7c3aed); color: white; padding: 1rem; text-align: left; font-weight: 600; font-size: 0.85rem; }
         td { padding: 1rem; border-bottom: 1px solid #e2e8f0; font-size: 0.85rem; }
         tr:hover { background: #f8fafc; }
+        
+        /* ✅ Visual separator for Print column */
+        td:nth-child(9) {
+            border-left: 2px dashed #cbd5e1;
+            background: #f8fafc;
+        }
+        
         .status-badge { display: inline-flex; align-items: center; gap: 5px; padding: 0.25rem 0.75rem; border-radius: 60px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
         .status-scheduled { background: #e3f2fd; color: #1976d2; }
         .status-confirmed { background: #e8f5e8; color: #388e3c; }
@@ -272,8 +279,30 @@ if (!$stats) {
         .btn-cancel { background: #f56565; color: white; }
         .btn-noshow { background: #ed8936; color: white; }
         .action-btn:hover { transform: translateY(-1px); filter: brightness(0.9); }
-        .print-ticket { display: inline-flex; align-items: center; gap: 5px; background: #718096; color: white; padding: 0.4rem 0.8rem; border-radius: 60px; text-decoration: none; font-size: 0.7rem; font-weight: 600; transition: all 0.2s ease; }
-        .print-ticket:hover { background: #4a5568; transform: translateY(-1px); }
+        
+        /* ✅ Enhanced Print button styling */
+        .print-ticket { 
+            display: inline-flex; 
+            align-items: center; 
+            justify-content: center;
+            gap: 5px; 
+            background: linear-gradient(135deg, #64748b, #475569); 
+            color: white; 
+            padding: 0.5rem 1rem; 
+            border-radius: 8px; 
+            text-decoration: none; 
+            font-size: 0.75rem; 
+            font-weight: 600; 
+            transition: all 0.2s ease; 
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .print-ticket:hover { 
+            background: linear-gradient(135deg, #475569, #334155); 
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        
         .sms-badge { display: inline-flex; align-items: center; gap: 4px; padding: 0.25rem 0.6rem; border-radius: 60px; font-size: 0.65rem; font-weight: 700; }
         .sms-yes { background: #e8f5e8; color: #2e7d32; }
         .sms-no { background: #ffebee; color: #c62828; }
@@ -282,12 +311,27 @@ if (!$stats) {
         .success { background: #e8f5e8; color: #2e7d32; border-left: 4px solid #48bb78; }
         .error { background: #ffebee; color: #c62828; border-left: 4px solid #f56565; }
         .empty-row td { text-align: center; padding: 3rem; color: #94a3b8; }
+        
         @media (max-width: 768px) {
             .navbar { flex-direction: column; text-align: center; }
             .stats-grid { grid-template-columns: repeat(2, 1fr); }
             .filter-bar { justify-content: center; }
             .filter-info { margin-left: 0; width: 100%; text-align: center; }
             .container { padding: 0 1rem; }
+            
+            /* ✅ Mobile: stack Print column below Actions */
+            td:nth-child(8), td:nth-child(9) {
+                display: block;
+                width: 100%;
+                text-align: center;
+                padding: 0.5rem !important;
+            }
+            td:nth-child(9) {
+                border-left: none;
+                border-top: 1px dashed #cbd5e1;
+                padding-top: 0.75rem !important;
+                background: transparent;
+            }
         }
     </style>
 </head>
@@ -355,6 +399,8 @@ if (!$stats) {
                             <td><span class="queue-number">#<?php echo htmlspecialchars($apt['queue_number']); ?></span></td>
                             <td><span class="status-badge status-<?php echo $apt['status']; ?>"><i class="fas <?php echo $apt['status'] == 'scheduled' ? 'fa-clock' : ($apt['status'] == 'confirmed' ? 'fa-check-circle' : ($apt['status'] == 'completed' ? 'fa-flag-checkered' : ($apt['status'] == 'cancelled' ? 'fa-ban' : 'fa-user-slash'))); ?>"></i> <?php echo ucfirst($apt['status']); ?></span></td>
                             <td><?php if (isset($apt['send_sms']) && $apt['send_sms'] == 1): ?><span class="sms-badge sms-yes"><i class="fas fa-check"></i> Yes</span><?php else: ?><span class="sms-badge sms-no"><i class="fas fa-times"></i> No</span><?php endif; ?></td>
+                            
+                            <!-- ✅ COLUMN 8: Actions (status buttons only) -->
                             <td>
                                 <?php if ($apt['status'] == 'scheduled'): ?>
                                     <a href="?action=confirm&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="action-btn btn-confirm" onclick="return confirm('Confirm this appointment? SMS will be sent if patient requested.');"><i class="fas fa-check"></i> Confirm</a>
@@ -366,11 +412,18 @@ if (!$stats) {
                                     <a href="?action=noshow&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="action-btn btn-noshow" onclick="return confirm('Mark patient as no-show?')"><i class="fas fa-user-slash"></i> No Show</a>
                                     <a href="?action=cancel&id=<?php echo $apt['appointment_id']; ?>&filter=<?php echo $filter; ?>&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="action-btn btn-cancel" onclick="return confirm('Cancel this appointment?')"><i class="fas fa-times"></i> Cancel</a>
                                 <?php endif; ?>
-                                <a href="print_ticket.php?id=<?php echo $apt['appointment_id']; ?>" class="print-ticket" target="_blank"><i class="fas fa-print"></i> Print</a>
+                            </td>
+                            
+                            <!-- ✅ COLUMN 9: Ticket (Print button ONLY - separated) -->
+                            <td style="text-align: center; vertical-align: middle;">
+                                <a href="print_ticket.php?id=<?php echo $apt['appointment_id']; ?>" class="print-ticket" target="_blank">
+                                    <i class="fas fa-print"></i> Print
+                                </a>
                             </td>
                         </tr>
                     <?php endforeach; ?>
                 <?php else: ?>
+                    <!-- ✅ Updated colspan to 9 for the new column structure -->
                     <tr class="empty-row"><td colspan="9"><i class="fas fa-calendar-times" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></i>No appointments found for this date.</td></tr>
                 <?php endif; ?>
                 </tbody>
