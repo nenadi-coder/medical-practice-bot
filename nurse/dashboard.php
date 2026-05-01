@@ -391,12 +391,31 @@ if (!$stats) {
                 <tbody>
                 <?php if (count($appointments) > 0): ?>
                     <?php foreach($appointments as $apt): ?>
+                        <?php
+                        // ✅ DYNAMIC QUEUE LOGIC: Calculate live position using appointment_time
+                        $pos_stmt = $pdo->prepare("
+                            SELECT COUNT(*) as ahead FROM appointments 
+                            WHERE doctor_id = ? 
+                            AND appointment_date = ? 
+                            AND appointment_time < ? 
+                            AND status IN ('scheduled', 'confirmed')
+                            AND appointment_id != ?
+                        ");
+                        $pos_stmt->execute([
+                            $apt['doctor_id'],
+                            $apt['appointment_date'],
+                            $apt['appointment_time'],
+                            $apt['appointment_id']
+                        ]);
+                        $position = (int)$pos_stmt->fetchColumn() + 1;
+                        ?>
                         <tr>
                             <td><i class="far fa-clock"></i> <?php echo date('g:i A', strtotime($apt['appointment_time'])); ?></td>
                             <td><strong><?php echo htmlspecialchars($apt['patient_name']); ?></strong></td>
                             <td><?php echo htmlspecialchars($apt['patient_phone']); ?></td>
                             <td>Dr. <?php echo htmlspecialchars($apt['doctor_name']); ?></td>
-                            <td><span class="queue-number">#<?php echo htmlspecialchars($apt['queue_number']); ?></span></td>
+                            <!-- ✅ Display calculated dynamic position -->
+                            <td><span class="queue-number">#<?php echo $position; ?></span></td>
                             <td><span class="status-badge status-<?php echo $apt['status']; ?>"><i class="fas <?php echo $apt['status'] == 'scheduled' ? 'fa-clock' : ($apt['status'] == 'confirmed' ? 'fa-check-circle' : ($apt['status'] == 'completed' ? 'fa-flag-checkered' : ($apt['status'] == 'cancelled' ? 'fa-ban' : 'fa-user-slash'))); ?>"></i> <?php echo ucfirst($apt['status']); ?></span></td>
                             <td><?php if (isset($apt['send_sms']) && $apt['send_sms'] == 1): ?><span class="sms-badge sms-yes"><i class="fas fa-check"></i> Yes</span><?php else: ?><span class="sms-badge sms-no"><i class="fas fa-times"></i> No</span><?php endif; ?></td>
                             
