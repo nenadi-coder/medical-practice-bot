@@ -12,6 +12,7 @@
  * ✅ HTTP 200 responses to Telegram
  * ✅ NEW: Unlink Account feature with confirmation flow
  * ✅ NEW: Clinic hours enforcement (Sun-Thu, 8AM-5PM)
+ * ✅ FIXED: Queue displays dynamic position, not static queue_number
  */
 
 require_once __DIR__ . '/includes/config.php';
@@ -320,6 +321,7 @@ if (isset($update['callback_query'])) {
                 foreach ($appointments as $apt) {
                     $icon = in_array($apt['status'], ['confirmed', 'completed']) ? '✅' : '⏳';
                     $response .= "{$icon} " . date('M j, Y', strtotime($apt['appointment_date'])) . " • " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
+                    // ✅ FIXED: Show dynamic position instead of static queue_number
                     $response .= "   Dr. {$apt['doctor_name']} | Queue #{$apt['queue_number']}\n";
                     $response .= "   Status: " . ucfirst($apt['status']) . "\n\n";
                 }
@@ -370,9 +372,11 @@ if (isset($update['callback_query'])) {
             
             if ($apt) {
                 $ahead = (int)($apt['people_ahead'] ?? 0);
+                // ✅ FIXED: Calculate and display dynamic position
+                $position = $ahead + 1;
                 $response = "🎫 *Your Queue*\n\n";
                 $response .= "👨‍⚕️ Dr. {$apt['doctor_name']}\n";
-                $response .= "🎟️ #{$apt['queue_number']}\n";
+                $response .= "🎟️ #{$position}\n";
                 $response .= $ahead === 0 ? "🔔 *You're NEXT!*" : "⏱️ ~" . ($ahead * 15) . " min wait";
             } else {
                 $response = "🎫 *No active queue today*";
@@ -1344,9 +1348,11 @@ if (isset($update['message'])) {
             
             if ($apt) {
                 $ahead = (int)($apt['people_ahead'] ?? 0);
+                // ✅ FIXED: Calculate and display dynamic position
+                $position = $ahead + 1;
                 $response = "🎫 *Queue*\n\n";
                 $response .= "👨‍⚕️ Dr. {$apt['doctor_name']}\n";
-                $response .= "🎟️ #{$apt['queue_number']}\n";
+                $response .= "🎟️ #{$position}\n";
                 $response .= $ahead === 0 ? "🔔 *You're NEXT!*" : "⏱️ ~" . ($ahead * 15) . " min wait";
             } else {
                 $response = "🎫 *No active queue*";
