@@ -7,8 +7,8 @@ define('EASYSENDSMS_USERNAME', getenv('SMS_USERNAME') ?: '');
 define('EASYSENDSMS_API_KEY', getenv('SMS_API_KEY') ?: '');
 
 // FALLBACK - SET THESE IF ENV VARS NOT AVAILABLE
-// define('EASYSENDSMS_USERNAME', 'nadoouamhou6s2026');
-// define('EASYSENDSMS_API_KEY', 'IBxpv37c');
+// define('EASYSENDSMS_USERNAME', 'fatmfatmwgq5n2026');
+// define('EASYSENDSMS_API_KEY', 'pzop9z61b36f6ncj9fcx4rt6kats3n32');
 
 function sendSMS($phoneNumber, $message) {
     $username = EASYSENDSMS_USERNAME;
