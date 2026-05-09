@@ -2,23 +2,23 @@
 session_start();
 require_once '../includes/config.php';
 
-define('EASYSENDSMS_USERNAME', getenv('SMS_USERNAME') ?: '');
-define('EASYSENDSMS_API_KEY', getenv('SMS_API_KEY') ?: '');
+// 🔐 SMS CREDENTIALS - HTTP API with login password
+define('EASYSENDSMS_USERNAME', 'fatmfatmwgq5n2026');
+define('EASYSENDSMS_PASSWORD', 'DIROca3u'); // ← Replace with real password
 
-// FALLBACK - SET THESE IF ENV VARS NOT AVAILABLE
-// define('EASYSENDSMS_USERNAME', 'fatmfatmwgq5n2026');
- //define('EASYSENDSMS_API_KEY', 'pzop9z61b36f6ncj9fcx4rt6kats3n32');
 
 function sendSMS($phoneNumber, $message) {
     $username = EASYSENDSMS_USERNAME;
-    $apiKey = EASYSENDSMS_API_KEY;
+    $password = EASYSENDSMS_PASSWORD;
     
-    if (empty($username) || empty($apiKey)) {
+    if (empty($username) || empty($password)) {
         error_log("SMS credentials not configured");
         return false;
     }
     
-    $phoneNumber = preg_replace('/^0+/', '', $phoneNumber);
+    // Format phone: 213XXXXXXXXX (no +, no 00, no leading zeros)
+    $phoneNumber = preg_replace('/[^0-9]/', '', $phoneNumber);
+    $phoneNumber = ltrim($phoneNumber, '0');
     if (!preg_match('/^213/', $phoneNumber)) {
         $phoneNumber = '213' . $phoneNumber;
     }
@@ -27,11 +27,11 @@ function sendSMS($phoneNumber, $message) {
     
     $postData = http_build_query([
         'username' => $username,
-        'password' => $apiKey,
-        'from'     => 'Clinic',
+        'password' => $password,  // ← Your login password
+        'from'     => 'Clinic', // ≤11 chars, registered sender preferred
         'to'       => $phoneNumber,
         'text'     => $message,
-        'type'     => '0'
+        'type'     => '0' // GSM encoding; use '1' if message has emojis/Unicode
     ]);
     
     $ch = curl_init();
@@ -42,12 +42,21 @@ function sendSMS($phoneNumber, $message) {
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_HTTPHEADER => ['Content-Type: application/x-www-form-urlencoded'],
         CURLOPT_TIMEOUT => 30,
+        CURLOPT_SSL_VERIFYPEER => true,
+        CURLOPT_SSL_VERIFYHOST => 2,
     ]);
     
     $response = curl_exec($ch);
+    $curlError = curl_error($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
     
-    return $response && strpos($response, 'OK:') === 0;
+    // Debug logging (remove after testing)
+    if ($curlError) error_log("SMS cURL Error: $curlError");
+    if ($httpCode !== 200) error_log("SMS HTTP Error: $httpCode - Response: $response");
+    error_log("SMS Response: " . trim($response));
+    
+    return $response && strpos(trim($response), 'OK:') === 0;
 }
 
 // CSRF Token
