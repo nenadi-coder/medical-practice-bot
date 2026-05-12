@@ -399,13 +399,13 @@
         </div>
         <div class="contact-row">
             <div class="contact-item">
-                <i class="fas fa-phone-alt"></i> <span>0567890123</span>
+                <i class="fas fa-phone-alt"></i> <span>033 74 15 27</span>
             </div>
             <div class="contact-item hours">
                 <i class="far fa-clock"></i> <span>Sun-Thu: 8AM–5PM</span>
             </div>
             <div class="contact-item">
-                <i class="fas fa-map-marker-alt"></i> <span>123 Health Street, Medical City</span>
+                <i class="fas fa-map-marker-alt"></i> <span>Rue Hakim Sadanne, Biskra 07000</span>
             </div>
         </div>
     </div>
@@ -422,7 +422,7 @@
             <div class="feature-card">
                 <div class="feature-icon"><i class="fas fa-file-invoice-dollar"></i></div>
                 <h3>Insurance Accepted</h3>
-                <p>We accept most major insurance plans</p>
+                <p>We accept most major insurance plans "CNAS/CASNOS"</p>
             </div>
             <div class="feature-card">
                 <div class="feature-icon"><i class="fas fa-heartbeat"></i></div>
@@ -431,8 +431,8 @@
             </div>
         </div>
         <div class="address-mini">
-            <i class="fas fa-location-dot"></i> 123 Health Street, Medical City &nbsp;|&nbsp; 
-            <i class="fas fa-phone"></i> (0567890123)
+            <i class="fas fa-location-dot"></i> Rue Hakim Sadanne, Biskra 07000 &nbsp;|&nbsp; 
+            <i class="fas fa-phone"></i> (033 74 15 27)
         </div>
     </div>
 
@@ -453,8 +453,8 @@
             <p><i class="far fa-copyright"></i> 2026 Shifa Medical Center. All rights reserved.</p>
         </div>
         <div class="footer-right">
-            <span><i class="fas fa-map-pin"></i> 123 Health Street, Medical City</span>
-            <span><i class="fas fa-phone-alt"></i> 0567890123</span>
+            <span><i class="fas fa-map-pin"></i> Rue Hakim Sadanne, Biskra 07000</span>
+            <span><i class="fas fa-phone-alt"></i> 033 74 15 27</span>
             <span><i class="far fa-calendar-alt"></i> Sun-Thu: 8AM–5PM</span>
         </div>
     </div>
