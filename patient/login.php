@@ -322,7 +322,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         </div>
         
         <div class="back-home">
-            <a href="https://medicalpractice.free.nf/medical_practice/index.php" class="back-home-btn">
+            <a href="https://shifacenter.me/" class="back-home-btn">
                 <i class="fas fa-arrow-left"></i> Back to Home
             </a>
         </div>
