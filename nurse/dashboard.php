@@ -312,6 +312,26 @@ if (!$stats) {
         .error { background: #ffebee; color: #c62828; border-left: 4px solid #f56565; }
         .empty-row td { text-align: center; padding: 3rem; color: #94a3b8; }
         
+        /* ✅ Appointment time and date styling */
+        .appointment-time {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 2px;
+        }
+        .appointment-time .time {
+            font-weight: 600;
+            color: #1e2a3e;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .appointment-time .date {
+            font-size: 0.7rem;
+            color: #5b6e8c;
+            font-weight: 500;
+        }
+        
         @media (max-width: 768px) {
             .navbar { flex-direction: column; text-align: center; }
             .stats-grid { grid-template-columns: repeat(2, 1fr); }
@@ -410,7 +430,12 @@ if (!$stats) {
                         $position = (int)$pos_stmt->fetchColumn() + 1;
                         ?>
                         <tr>
-                            <td><i class="far fa-clock"></i> <?php echo date('g:i A', strtotime($apt['appointment_time'])); ?></td>
+                            <td>
+                                <div class="appointment-time">
+                                    <span class="time"><i class="far fa-clock"></i> <?php echo date('g:i A', strtotime($apt['appointment_time'])); ?></span>
+                                    <span class="date"><?php echo date('M j, Y', strtotime($apt['appointment_date'])); ?></span>
+                                </div>
+                            </td>
                             <td><strong><?php echo htmlspecialchars($apt['patient_name']); ?></strong></td>
                             <td><?php echo htmlspecialchars($apt['patient_phone']); ?></td>
                             <td>Dr. <?php echo htmlspecialchars($apt['doctor_name']); ?></td>
