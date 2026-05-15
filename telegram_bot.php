@@ -15,6 +15,7 @@
  * ✅ FIXED: Queue displays dynamic position, not static queue_number
  * ✅ FIXED: Undefined $tomorrow/$today in text message handler
  * ✅ FIXED: Safer session data loading
+ * ✅ FIXED: Store NULL for queue_number - calculated dynamically on display
  */
 
 require_once __DIR__ . '/includes/config.php';
@@ -219,7 +220,6 @@ function getAvailableTimeSlots($pdo, $date, $doctor_id = 1) {
     
     $available = [];
     $now = new DateTime();
-    // ✅ FIXED: Safer date comparison
     $dateStr = is_string($date) ? $date : $date->format('Y-m-d');
     $isToday = ($dateStr === $now->format('Y-m-d'));
     
@@ -301,9 +301,14 @@ if (isset($update['callback_query'])) {
             if ($appointments) {
                 $response = "📋 *Your Appointments*\n\n";
                 foreach ($appointments as $apt) {
+                    // ✅ DYNAMIC QUEUE: Calculate position on-the-fly
+                    $pos_calc = $pdo->prepare("SELECT COUNT(*) + 1 FROM appointments WHERE appointment_date = ? AND appointment_time < ? AND doctor_id = ? AND status IN ('scheduled', 'confirmed')");
+                    $pos_calc->execute([$apt['appointment_date'], $apt['appointment_time'], $apt['doctor_id']]);
+                    $dyn_queue = (int)$pos_calc->fetchColumn();
+                    
                     $icon = in_array($apt['status'], ['confirmed', 'completed']) ? '✅' : '⏳';
                     $response .= "{$icon} " . date('M j, Y', strtotime($apt['appointment_date'])) . " • " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
-                    $response .= "   Dr. {$apt['doctor_name']} | Queue #{$apt['queue_number']}\n";
+                    $response .= "   Dr. {$apt['doctor_name']} | Queue #{$dyn_queue}\n";
                     $response .= "   Status: " . ucfirst($apt['status']) . "\n\n";
                 }
             } else {
@@ -323,11 +328,16 @@ if (isset($update['callback_query'])) {
             $apt = $stmt->fetch();
             
             if ($apt) {
+                // ✅ DYNAMIC QUEUE: Calculate position on-the-fly
+                $pos_calc = $pdo->prepare("SELECT COUNT(*) + 1 FROM appointments WHERE appointment_date = ? AND appointment_time < ? AND doctor_id = ? AND status IN ('scheduled', 'confirmed')");
+                $pos_calc->execute([$apt['appointment_date'], $apt['appointment_time'], $apt['doctor_id']]);
+                $dyn_queue = (int)$pos_calc->fetchColumn();
+                
                 $response = "📅 *Next Appointment*\n\n";
                 $response .= "📆 " . date('l, F j, Y', strtotime($apt['appointment_date'])) . "\n";
                 $response .= "⏰ " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
                 $response .= "👨‍⚕️ Dr. {$apt['doctor_name']}\n";
-                $response .= "🎫 Queue #{$apt['queue_number']}\n\n";
+                $response .= "🎫 Queue #{$dyn_queue}\n\n";
                 $response .= "📌 Arrive 10 minutes early!";
             } else {
                 $response = "❌ *No upcoming confirmed appointments*";
@@ -529,7 +539,6 @@ if (isset($update['callback_query'])) {
             $stmt = $pdo->prepare("SELECT data_json FROM telegram_sessions WHERE telegram_user_id = ? LIMIT 1");
             $stmt->execute([$telegram_user_id]);
             $sess = $stmt->fetch();
-            // ✅ FIXED: Safer session loading
             $session_data = json_decode((is_array($sess) ? ($sess['data_json'] ?? '{}') : '{}'), true);
         } catch (PDOException $e) {
             $log("Session load error: " . $e->getMessage());
@@ -698,6 +707,7 @@ if (isset($update['callback_query'])) {
             $log("Final check error: " . $e->getMessage());
         }
         
+        // ✅ Calculate dynamic queue position for success message
         try {
             $q = $pdo->prepare("SELECT COUNT(*) + 1 FROM appointments WHERE appointment_date = ? AND appointment_time < ? AND doctor_id = ? AND status IN ('scheduled', 'confirmed')");
             $q->execute([$session_data['date'], $session_data['time'], 1]);
@@ -709,8 +719,9 @@ if (isset($update['callback_query'])) {
         
         try {
             $pdo->beginTransaction();
-            $pdo->prepare("INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, queue_number, status, send_sms, created_at) VALUES (?, ?, ?, ?, ?, 'scheduled', 1, NOW())")
-                ->execute([$patient['patient_id'], 1, $session_data['date'], $session_data['time'], $queueNum]);
+            // ✅ Store NULL for queue_number - calculated dynamically on display
+            $pdo->prepare("INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, queue_number, status, send_sms, created_at) VALUES (?, ?, ?, ?, NULL, 'scheduled', 1, NOW())")
+                ->execute([$patient['patient_id'], 1, $session_data['date'], $session_data['time']]);
             $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
             $pdo->commit();
             
@@ -958,7 +969,6 @@ if (isset($update['message'])) {
         }
         
         $dateObj = parseDateInput($text);
-        // ✅ FIXED: Define $tomorrow and $today here (was missing!)
         $tomorrow = new DateTime('tomorrow');
         $today = new DateTime('today');
         
@@ -1114,6 +1124,7 @@ if (isset($update['message'])) {
                 $log("Final check error: " . $e->getMessage());
             }
             
+            // ✅ Calculate dynamic queue position for success message
             try {
                 $q = $pdo->prepare("SELECT COUNT(*) + 1 FROM appointments WHERE appointment_date = ? AND appointment_time < ? AND doctor_id = ? AND status IN ('scheduled', 'confirmed')");
                 $q->execute([$sess_data['date'], $sess_data['time'], 1]);
@@ -1125,8 +1136,9 @@ if (isset($update['message'])) {
             
             try {
                 $pdo->beginTransaction();
-                $pdo->prepare("INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, queue_number, status, send_sms, created_at) VALUES (?, ?, ?, ?, ?, 'scheduled', 1, NOW())")
-                    ->execute([$patient['patient_id'], 1, $sess_data['date'], $sess_data['time'], $queueNum]);
+                // ✅ Store NULL for queue_number - calculated dynamically on display
+                $pdo->prepare("INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, queue_number, status, send_sms, created_at) VALUES (?, ?, ?, ?, NULL, 'scheduled', 1, NOW())")
+                    ->execute([$patient['patient_id'], 1, $sess_data['date'], $sess_data['time']]);
                 $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
                 $pdo->commit();
                 
@@ -1202,9 +1214,14 @@ if (isset($update['message'])) {
             if ($appointments) {
                 $response = "📋 *Your Appointments*\n\n";
                 foreach ($appointments as $apt) {
+                    // ✅ DYNAMIC QUEUE: Calculate position on-the-fly
+                    $pos_calc = $pdo->prepare("SELECT COUNT(*) + 1 FROM appointments WHERE appointment_date = ? AND appointment_time < ? AND doctor_id = ? AND status IN ('scheduled', 'confirmed')");
+                    $pos_calc->execute([$apt['appointment_date'], $apt['appointment_time'], $apt['doctor_id']]);
+                    $dyn_queue = (int)$pos_calc->fetchColumn();
+                    
                     $icon = in_array($apt['status'], ['confirmed', 'completed']) ? '✅' : '⏳';
                     $response .= "{$icon} " . date('M j, Y', strtotime($apt['appointment_date'])) . " • " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
-                    $response .= "   Dr. {$apt['doctor_name']} | Queue #{$apt['queue_number']}\n";
+                    $response .= "   Dr. {$apt['doctor_name']} | Queue #{$dyn_queue}\n";
                     $response .= "   Status: " . ucfirst($apt['status']) . "\n\n";
                 }
                 $response .= "To book: `/askappointment`";
@@ -1224,11 +1241,16 @@ if (isset($update['message'])) {
             $apt = $stmt->fetch();
             
             if ($apt) {
+                // ✅ DYNAMIC QUEUE: Calculate position on-the-fly
+                $pos_calc = $pdo->prepare("SELECT COUNT(*) + 1 FROM appointments WHERE appointment_date = ? AND appointment_time < ? AND doctor_id = ? AND status IN ('scheduled', 'confirmed')");
+                $pos_calc->execute([$apt['appointment_date'], $apt['appointment_time'], $apt['doctor_id']]);
+                $dyn_queue = (int)$pos_calc->fetchColumn();
+                
                 $response = "📅 *Next Appointment*\n\n";
                 $response .= "📆 " . date('l, F j, Y', strtotime($apt['appointment_date'])) . "\n";
                 $response .= "⏰ " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
                 $response .= "👨‍⚕️ Dr. {$apt['doctor_name']}\n";
-                $response .= "🎫 Queue #{$apt['queue_number']}\n\n";
+                $response .= "🎫 Queue #{$dyn_queue}\n\n";
                 $response .= "📌 Arrive 10 min early!";
             } else {
                 $response = "❌ *No upcoming confirmed appointments*";
