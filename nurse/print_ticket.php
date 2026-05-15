@@ -25,6 +25,17 @@ $apt = $stmt->fetch();
 if (!$apt) {
     die('Invalid appointment');
 }
+
+// ✅ DYNAMIC QUEUE: Calculate position on-the-fly using appointment_time
+$queue_stmt = $pdo->prepare("
+    SELECT COUNT(*) + 1 as position FROM appointments 
+    WHERE appointment_date = ? 
+    AND appointment_time < ? 
+    AND status IN ('scheduled', 'confirmed')
+    AND appointment_id != ?
+");
+$queue_stmt->execute([$apt['appointment_date'], $apt['appointment_time'], $apt['appointment_id']]);
+$queue_position = (int)$queue_stmt->fetchColumn();
 ?>
 
 <!DOCTYPE html>
@@ -156,8 +167,9 @@ if (!$apt) {
         <div class="clinic-name">🏥 MEDICAL PRACTICE</div>
         <h2>Queue Ticket</h2>
         
+        <!-- ✅ Display calculated dynamic position instead of stored queue_number -->
         <div class="queue-number">
-            #<?php echo htmlspecialchars($apt['queue_number'] ?? 'N/A'); ?>
+            #<?php echo htmlspecialchars($queue_position); ?>
         </div>
         
         <div class="info">
