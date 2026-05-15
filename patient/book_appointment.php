@@ -68,25 +68,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 if ($check_stmt->rowCount() > 0) {
                     $error = "You already have an appointment on this date";
                 } else {
-                    // Calculate queue position based on time order for that date
-                    $queue_sql = "SELECT COUNT(*) + 1 as next_queue 
-                                 FROM appointments 
-                                 WHERE appointment_date = ? 
-                                 AND appointment_time < ?";
-                    $queue_stmt = $pdo->prepare($queue_sql);
-                    $queue_stmt->execute([$appointment_date, $appointment_time]);
-                    $queue_number = $queue_stmt->fetchColumn();
-                    
-                    if (!$queue_number) {
-                        $queue_number = 1;
-                    }
-                    
-                    // Insert appointment
+                    // ✅ DYNAMIC QUEUE: Store NULL - position calculated on display
+                    // Insert appointment with queue_number = NULL
                     $sql = "INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, queue_number, notes, send_sms, status) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?, 'scheduled')";
+                            VALUES (?, ?, ?, ?, NULL, ?, ?, 'scheduled')";
                     $stmt = $pdo->prepare($sql);
                     
-                    if ($stmt->execute([$patient_id, $doctor_id, $appointment_date, $appointment_time, $queue_number, $notes, $send_sms])) {
+                    if ($stmt->execute([$patient_id, $doctor_id, $appointment_date, $appointment_time, $notes, $send_sms])) {
                         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
                         $success = "Appointment request submitted! Waiting for nurse confirmation.";
                     } else {
