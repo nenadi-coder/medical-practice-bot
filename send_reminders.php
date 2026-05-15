@@ -34,13 +34,18 @@ $appointments = $stmt->fetchAll();
 $sent_count = 0;
 
 foreach ($appointments as $apt) {
+    // ✅ DYNAMIC QUEUE: Calculate position on-the-fly for reminder
+    $queue_calc = $pdo->prepare("SELECT COUNT(*) + 1 FROM appointments WHERE appointment_date = ? AND appointment_time < ? AND doctor_id = ? AND status IN ('scheduled', 'confirmed')");
+    $queue_calc->execute([$apt['appointment_date'], $apt['appointment_time'], $apt['doctor_id']]);
+    $dyn_queue = (int)$queue_calc->fetchColumn();
+    
     $message = "🏥 *Appointment Reminder*\n\n";
     $message .= "Hello {$apt['first_name']}!\n";
     $message .= "You have an appointment TOMORROW:\n\n";
     $message .= "📅 Date: " . date('l, F j', strtotime($apt['appointment_date'])) . "\n";
     $message .= "🕒 Time: " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
     $message .= "👨‍⚕️ Doctor: Dr. {$apt['doctor_name']}\n";
-    $message .= "🎫 Queue #: {$apt['queue_number']}\n\n";
+    $message .= "🎫 Queue #: {$dyn_queue}\n\n";  // ✅ Dynamic value
     $message .= "Please arrive 10 minutes early.";
     
     $result = sendTelegramMessage($apt['telegram_user_id'], $message, $bot_token);
