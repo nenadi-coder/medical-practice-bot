@@ -58,26 +58,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($check_stmt->rowCount() > 0) {
             $error = "You already have another appointment on this date";
         } else {
-            // Get new queue number for the new date
-            $queue_sql = "SELECT COALESCE(MAX(queue_number), 0) + 1 as next_queue 
-                         FROM appointments WHERE appointment_date = ?";
-            $queue_stmt = $pdo->prepare($queue_sql);
-            $queue_stmt->execute([$new_date]);
-            $queue = $queue_stmt->fetch();
-            $new_queue = $queue['next_queue'];
-            
-            // Update appointment
+            // ✅ DYNAMIC QUEUE: Update with queue_number = NULL
             $update_sql = "UPDATE appointments SET 
                           appointment_date = ?, 
                           appointment_time = ?,
                           doctor_id = ?,
-                          queue_number = ?,
+                          queue_number = NULL,
                           notes = ?
                           WHERE appointment_id = ? AND patient_id = ?";
             $update_stmt = $pdo->prepare($update_sql);
             
-            if ($update_stmt->execute([$new_date, $new_time, $doctor_id, $new_queue, $notes, $appointment_id, $patient_id])) {
-                $success = "Appointment rescheduled successfully! New queue number: " . $new_queue;
+            if ($update_stmt->execute([$new_date, $new_time, $doctor_id, NULL, $notes, $appointment_id, $patient_id])) {
+                
+                // ✅ Calculate dynamic queue position for success message (same logic as dashboard.php)
+                $queue_sql = "SELECT COUNT(*) as people_ahead FROM appointments 
+                              WHERE appointment_date = ? 
+                              AND appointment_time < ? 
+                              AND status IN ('scheduled', 'confirmed')
+                              AND appointment_id != ?";
+                $queue_stmt = $pdo->prepare($queue_sql);
+                $queue_stmt->execute([$new_date, $new_time, $appointment_id]);
+                $people_ahead = (int)$queue_stmt->fetchColumn();
+                $new_queue_position = $people_ahead + 1;
+                
+                $success = "Appointment rescheduled successfully! New queue number: " . $new_queue_position;
             } else {
                 $error = "Failed to reschedule appointment";
             }
