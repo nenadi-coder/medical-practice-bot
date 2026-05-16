@@ -406,7 +406,7 @@
                 <i class="far fa-clock"></i> <span>Sun-Thu: 8AM–5PM</span>
             </div>
             <div class="contact-item">
-                <i class="fas fa-map-marker-alt"></i> <span>Rue Hakim Sadanne, Biskra 07000</span>
+                <i class="fas fa-map-marker-alt"></i> <span>123 Health Street, Medical City</span>
             </div>
         </div>
     </div>
@@ -432,7 +432,7 @@
             </div>
         </div>
         <div class="address-mini">
-            <i class="fas fa-location-dot"></i> Rue Hakim Sadanne, Biskra 07000 &nbsp;|&nbsp; 
+            <i class="fas fa-location-dot"></i> 123 Health Street, Medical City &nbsp;|&nbsp; 
             <i class="fas fa-phone"></i> (033 74 15 27)
         </div>
     </div>
@@ -454,7 +454,7 @@
             <p><i class="far fa-copyright"></i> 2026 Shifa Medical Center. All rights reserved.</p>
         </div>
         <div class="footer-right">
-            <span><i class="fas fa-map-pin"></i> Rue Hakim Sadanne, Biskra 07000</span>
+            <span><i class="fas fa-map-pin"></i> 123 Health Street, Medical City</span>
             <span><i class="fas fa-phone-alt"></i> 033 74 15 27</span>
             <span><i class="far fa-calendar-alt"></i> Sun-Thu: 8AM–5PM</span>
         </div>
