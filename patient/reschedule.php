@@ -42,10 +42,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     
     $today = date('Y-m-d');
     
+    // === ✅ WORKING HOURS VALIDATION (Server-Side Only) ===
+    $day_of_week = (int)date('N', strtotime($new_date)); // 1=Mon, 7=Sun
+    $hour = (int)date('H', strtotime($new_time));        // 0-23
+    
     if (empty($new_date) || empty($new_time) || empty($doctor_id)) {
         $error = "Please fill all required fields";
     } elseif ($new_date < $today) {
         $error = "Cannot select past dates";
+    } elseif ($day_of_week == 5 || $day_of_week == 6) { // Friday=5, Saturday=6
+        $error = "Clinic is closed on Fridays and Saturdays. Please choose Sunday–Thursday.";
+    } elseif ($hour < 8 || $hour >= 17) { // Before 8:00 AM or 5:00 PM and later
+        $error = "Working hours are 8:00 AM – 5:00 PM. Please select a time within this range.";
     } else {
         // Check if patient already has another appointment on this date/time
         $check_sql = "SELECT appointment_id FROM appointments 
@@ -68,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                           WHERE appointment_id = ? AND patient_id = ?";
             $update_stmt = $pdo->prepare($update_sql);
             
-            if ($update_stmt->execute([$new_date, $new_time, $doctor_id, NULL, $notes, $appointment_id, $patient_id])) {
+            if ($update_stmt->execute([$new_date, $new_time, $doctor_id, $notes, $appointment_id, $patient_id])) {
                 
                 // ✅ Calculate dynamic queue position for success message (same logic as dashboard.php)
                 $queue_sql = "SELECT COUNT(*) as people_ahead FROM appointments 
