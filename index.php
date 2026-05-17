@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Shifa Medical Center | Biskra| Quality Healthcare for You & Family</title>
+    <title>Shifa Medical Center  Quality Healthcare for You & Family</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
@@ -229,45 +229,11 @@
 
         .portal-section p {
             color: #2d3a5e;
-            margin-bottom: 1.25rem;
+            margin-bottom: 2rem;
             font-size: 1.05rem;
             max-width: 550px;
             margin-left: auto;
             margin-right: auto;
-        }
-
-        /* ✅ NEW: Helper text styling for login/register guidance */
-        .portal-helper {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 1.2rem;
-            justify-content: center;
-            margin: 0 auto 1.75rem auto;
-            padding: 0.9rem 1.4rem;
-            background: rgba(255,255,255,0.7);
-            border-radius: 14px;
-            max-width: 600px;
-            font-size: 0.95rem;
-            color: #334155;
-            border: 1px solid rgba(102,126,234,0.15);
-        }
-
-        .portal-helper span {
-            display: flex;
-            align-items: center;
-            gap: 0.4rem;
-        }
-
-        .portal-helper a {
-            color: #4f46e5;
-            font-weight: 600;
-            text-decoration: none;
-            transition: color 0.2s ease;
-        }
-
-        .portal-helper a:hover {
-            color: #4338ca;
-            text-decoration: underline;
         }
 
         .buttons {
@@ -407,19 +373,8 @@
             .portal-section h3 {
                 font-size: 1.5rem;
             }
-            .portal-helper {
-                flex-direction: column;
-                gap: 0.6rem;
-                padding: 0.8rem 1.2rem;
-            }
             .btn {
                 padding: 0.8rem 1.5rem;
-                width: 100%;
-                justify-content: center;
-            }
-            .buttons {
-                flex-direction: column;
-                align-items: center;
             }
         }
 
@@ -486,13 +441,6 @@
     <div class="portal-section">
         <h3><i class="fas fa-users" style="margin-right: 12px;"></i> Secure Portal Access</h3>
         <p>Manage appointments, health records, and communicate with your care team</p>
-        
-        <!-- ✅ NEW: Helper text for login/register guidance -->
-        <div class="portal-helper">
-            <span>🔐 Already registered? <a href="patient/login.php">Log in to your portal</a></span>
-            <span>🆕 New patient? <a href="patient/register.php">Start by booking an appointment</a></span>
-        </div>
-        
         <div class="buttons">
             <a href="patient/login.php" class="btn btn-patient"><i class="fas fa-user-circle"></i> Patient Portal</a>
             <a href="nurse/login.php" class="btn btn-nurse"><i class="fas fa-user-nurse"></i> Nurse Portal</a>
@@ -516,4 +464,4 @@
     </div>
 </div>
 </body>
-</html>
+</html> 
