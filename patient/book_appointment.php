@@ -68,17 +68,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 if ($check_stmt->rowCount() > 0) {
                     $error = "You already have an appointment on this date";
                 } else {
-                    // ✅ DYNAMIC QUEUE: Store NULL - position calculated on display
-                    // Insert appointment with queue_number = NULL
-                    $sql = "INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, queue_number, notes, send_sms, status) 
-                            VALUES (?, ?, ?, ?, NULL, ?, ?, 'scheduled')";
-                    $stmt = $pdo->prepare($sql);
+                    // ✅ NEW: Check if DOCTOR is already booked at this date/time
+                    $conflict_sql = "SELECT appointment_id FROM appointments 
+                                     WHERE doctor_id = ? 
+                                     AND appointment_date = ? 
+                                     AND appointment_time = ? 
+                                     AND status IN ('scheduled', 'confirmed')";
+                    $conflict_stmt = $pdo->prepare($conflict_sql);
+                    $conflict_stmt->execute([$doctor_id, $appointment_date, $appointment_time]);
                     
-                    if ($stmt->execute([$patient_id, $doctor_id, $appointment_date, $appointment_time, $notes, $send_sms])) {
-                        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-                        $success = "Appointment request submitted! Waiting for nurse confirmation.";
+                    if ($conflict_stmt->rowCount() > 0) {
+                        $error = "This time slot is no longer available. Please choose another.";
                     } else {
-                        $error = "Failed to book appointment. Please try again.";
+                        // ✅ DYNAMIC QUEUE: Store NULL - position calculated on display
+                        // Insert appointment with queue_number = NULL
+                        $sql = "INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, queue_number, notes, send_sms, status) 
+                                VALUES (?, ?, ?, ?, NULL, ?, ?, 'scheduled')";
+                        $stmt = $pdo->prepare($sql);
+                        
+                        if ($stmt->execute([$patient_id, $doctor_id, $appointment_date, $appointment_time, $notes, $send_sms])) {
+                            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+                            $success = "Appointment request submitted! Waiting for nurse confirmation.";
+                        } else {
+                            $error = "Failed to book appointment. Please try again.";
+                        }
                     }
                 }
             }
