@@ -7,7 +7,7 @@ define('EASYSENDSMS_API_KEY', getenv('SMS_API_KEY') ?: '');
 
 // FALLBACK - SET THESE IF ENV VARS NOT AVAILABLE
 // define('EASYSENDSMS_USERNAME', 'fatmfatmwgq5n2026');
- //define('EASYSENDSMS_API_KEY', 'pzop9z61b36f6ncj9fcx4rt6kats3n32');
+// define('EASYSENDSMS_API_KEY', 'pzop9z61b36f6ncj9fcx4rt6kats3n32');
 
 function sendSMS($phoneNumber, $message) {
     $username = EASYSENDSMS_USERNAME;
@@ -152,11 +152,11 @@ $date_filter = $today;
 
 if ($filter == 'tomorrow') {
     $date_filter = date('Y-m-d', strtotime('+1 day'));
-} elseif ($filter == 'all') {
-    $date_filter = '';
 }
 
+// ✅ MODIFIED: "All" filter now shows current month only
 if ($filter == 'all') {
+    $current_month = date('Y-m'); // e.g., "2026-05"
     $sql = "SELECT a.*, a.send_sms,
             CONCAT(p.first_name, ' ', p.last_name) as patient_name,
             p.phone as patient_phone,
@@ -164,9 +164,10 @@ if ($filter == 'all') {
             FROM appointments a
             JOIN patients p ON a.patient_id = p.patient_id
             JOIN doctors d ON a.doctor_id = d.doctor_id
+            WHERE DATE_FORMAT(a.appointment_date, '%Y-%m') = ?
             ORDER BY a.appointment_date DESC, a.appointment_time ASC";
     $stmt = $pdo->prepare($sql);
-    $stmt->execute();
+    $stmt->execute([$current_month]);
 } else {
     $sql = "SELECT a.*, a.send_sms,
             CONCAT(p.first_name, ' ', p.last_name) as patient_name,
@@ -182,7 +183,7 @@ if ($filter == 'all') {
 }
 $appointments = $stmt->fetchAll();
 
-// Get stats for today
+// Get stats for today (unchanged - stats always for today)
 $stats_sql = "SELECT 
               COUNT(*) as total,
               SUM(CASE WHEN status = 'scheduled' THEN 1 ELSE 0 END) as scheduled,
@@ -389,8 +390,10 @@ if (!$stats) {
         <div class="filter-bar">
             <a href="?filter=today&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="filter-btn <?php echo $filter == 'today' ? 'active' : ''; ?>"><i class="fas fa-calendar-day"></i> Today</a>
             <a href="?filter=tomorrow&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="filter-btn <?php echo $filter == 'tomorrow' ? 'active' : ''; ?>"><i class="fas fa-calendar-plus"></i> Tomorrow</a>
-            <a href="?filter=all&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="filter-btn <?php echo $filter == 'all' ? 'active' : ''; ?>"><i class="fas fa-list"></i> All Appointments</a>
-            <span class="filter-info"><i class="fas fa-eye"></i> Showing: <strong><?php if ($filter == 'today') echo date('F j, Y'); elseif ($filter == 'tomorrow') echo date('F j, Y', strtotime('+1 day')); else echo 'All dates'; ?></strong></span>
+            <a href="?filter=all&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="filter-btn <?php echo $filter == 'all' ? 'active' : ''; ?>"><i class="fas fa-list"></i> This Month</a>
+            <!-- ✅ Updated label: "All Appointments" → "This Month" -->
+            <span class="filter-info"><i class="fas fa-eye"></i> Showing: <strong><?php if ($filter == 'today') echo date('F j, Y'); elseif ($filter == 'tomorrow') echo date('F j, Y', strtotime('+1 day')); else echo date('F Y'); ?></strong></span>
+            <!-- ✅ Updated display: "All dates" → "May 2026" (current month/year) -->
         </div>
         
         <div class="appointments-table">
@@ -468,7 +471,7 @@ if (!$stats) {
                     <?php endforeach; ?>
                 <?php else: ?>
                     <!-- ✅ Updated colspan to 9 for the new column structure -->
-                    <tr class="empty-row"><td colspan="9"><i class="fas fa-calendar-times" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></i>No appointments found for this date.</td></tr>
+                    <tr class="empty-row"><td colspan="9"><i class="fas fa-calendar-times" style="font-size: 2rem; display: block; margin-bottom: 0.5rem;"></i>No appointments found for <?php echo $filter == 'all' ? 'this month' : 'this date'; ?>.</td></tr>
                 <?php endif; ?>
                 </tbody>
             </table>
