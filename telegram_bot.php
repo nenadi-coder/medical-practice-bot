@@ -7,8 +7,9 @@
  * ✅ FIXED: Session expiration (30 min timeout)
  * ✅ FIXED: booking:time redirect preserves session date
  * ✅ FIXED: Text input during booking_confirm properly handled
- * ✅ FIXED: Wait estimate = 30 min per person (matches slot spacing)
+ * ✅ FIXED: Wait estimate = 15 min per person (matches website & slot spacing)
  * ✅ FIXED: Callback data consistency (date:/time: prefixes)
+ * ✅ FIXED: Time slots = 15-minute intervals (8:00 AM - 4:45 PM)
  */
 
 require_once __DIR__ . '/includes/config.php';
@@ -203,13 +204,17 @@ function getAvailableTimeSlots($pdo, $date, $doctor_id = 1) {
         return [];
     }
     
+    // ✅ UPDATED: 15-minute intervals from 8:00 AM to 4:45 PM (matches website)
     $allSlots = [
-        '08:30:00' => '8:30 AM', '09:00:00' => '9:00 AM', '09:30:00' => '9:30 AM',
-        '10:00:00' => '10:00 AM', '10:30:00' => '10:30 AM', '11:00:00' => '11:00 AM',
-        '11:30:00' => '11:30 AM', '12:00:00' => '12:00 PM', '12:30:00' => '12:30 PM',
-        '13:00:00' => '1:00 PM', '13:30:00' => '1:30 PM', '14:00:00' => '2:00 PM',
-        '14:30:00' => '2:30 PM', '15:00:00' => '3:00 PM', '15:30:00' => '3:30 PM',
-        '16:00:00' => '4:00 PM', '16:30:00' => '4:30 PM'
+        '08:00:00' => '8:00 AM', '08:15:00' => '8:15 AM', '08:30:00' => '8:30 AM', '08:45:00' => '8:45 AM',
+        '09:00:00' => '9:00 AM', '09:15:00' => '9:15 AM', '09:30:00' => '9:30 AM', '09:45:00' => '9:45 AM',
+        '10:00:00' => '10:00 AM', '10:15:00' => '10:15 AM', '10:30:00' => '10:30 AM', '10:45:00' => '10:45 AM',
+        '11:00:00' => '11:00 AM', '11:15:00' => '11:15 AM', '11:30:00' => '11:30 AM', '11:45:00' => '11:45 AM',
+        '12:00:00' => '12:00 PM', '12:15:00' => '12:15 PM', '12:30:00' => '12:30 PM', '12:45:00' => '12:45 PM',
+        '13:00:00' => '1:00 PM', '13:15:00' => '1:15 PM', '13:30:00' => '1:30 PM', '13:45:00' => '1:45 PM',
+        '14:00:00' => '2:00 PM', '14:15:00' => '2:15 PM', '14:30:00' => '2:30 PM', '14:45:00' => '2:45 PM',
+        '15:00:00' => '3:00 PM', '15:15:00' => '3:15 PM', '15:30:00' => '3:30 PM', '15:45:00' => '3:45 PM',
+        '16:00:00' => '4:00 PM', '16:15:00' => '4:15 PM', '16:30:00' => '4:30 PM', '16:45:00' => '4:45 PM'
     ];
     
     $available = [];
@@ -382,8 +387,8 @@ if (isset($update['callback_query'])) {
                 $response = "🎫 *Your Queue*\n\n";
                 $response .= "👨‍⚕️ Dr. {$apt['doctor_name']}\n";
                 $response .= "🎟️ #{$position}\n";
-                // ✅ FIXED: 30 min per person to match slot spacing
-                $response .= $ahead === 0 ? "🔔 *You're NEXT!*" : "⏱️ ~" . ($ahead * 30) . " min wait";
+                // ✅ FIXED: 15 min per person to match website & slot spacing
+                $response .= $ahead === 0 ? "🔔 *You're NEXT!*" : "⏱️ ~" . ($ahead * 15) . " min wait";
             } else {
                 $response = "🎫 *No active queue today*";
             }
@@ -1406,8 +1411,8 @@ if (isset($update['message'])) {
                 $response = "🎫 *Queue*\n\n";
                 $response .= "👨‍⚕️ Dr. {$apt['doctor_name']}\n";
                 $response .= "🎟️ #{$position}\n";
-                // ✅ FIXED: 30 min per person
-                $response .= $ahead === 0 ? "🔔 *You're NEXT!*" : "⏱️ ~" . ($ahead * 30) . " min wait";
+                // ✅ FIXED: 15 min per person to match website
+                $response .= $ahead === 0 ? "🔔 *You're NEXT!*" : "⏱️ ~" . ($ahead * 15) . " min wait";
             } else {
                 $response = "🎫 *No active queue*";
             }
