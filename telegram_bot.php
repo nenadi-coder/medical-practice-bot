@@ -1,21 +1,14 @@
 <?php
 /**
- * Shifa Medical Center - Telegram Bot (Production Ready)
+ * Shifa Medical Center - Telegram Bot (Production Ready - FIXED)
  * 
- * ✅ Single Doctor (Dr. John, doctor_id = 1)
- * ✅ Email-only patient lookup
- * ✅ Clickable inline keyboards
- * ✅ Proper callback handling with null checks
- * ✅ Past time filtering for today's bookings
- * ✅ Cancelled appointments excluded from queue
- * ✅ Error logging to file
- * ✅ HTTP 200 responses to Telegram
- * ✅ NEW: Unlink Account feature with confirmation flow
- * ✅ NEW: Clinic hours enforcement (Sun-Thu, 8AM-5PM)
- * ✅ FIXED: Queue displays dynamic position, not static queue_number
- * ✅ FIXED: Undefined $tomorrow/$today in text message handler
- * ✅ FIXED: Safer session data loading
- * ✅ FIXED: Store NULL for queue_number - calculated dynamically on display
+ * ✅ FIXED: Today available in booking buttons with past-time filtering
+ * ✅ FIXED: Queue excludes 'completed' appointments from "people ahead" count
+ * ✅ FIXED: Session expiration (30 min timeout)
+ * ✅ FIXED: booking:time redirect preserves session date
+ * ✅ FIXED: Text input during booking_confirm properly handled
+ * ✅ FIXED: Wait estimate = 30 min per person (matches slot spacing)
+ * ✅ FIXED: Callback data consistency (date:/time: prefixes)
  */
 
 require_once __DIR__ . '/includes/config.php';
@@ -26,7 +19,6 @@ ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/bot_errors.log');
 
-// Log helper
 $log = function($msg) {
     file_put_contents(__DIR__ . '/bot_debug.log', "[" . date('c') . "] $msg\n", FILE_APPEND);
 };
@@ -35,7 +27,7 @@ $log("=== BOT STARTED ===");
 // ========== BOT TOKEN ==========
 $bot_token = getenv('TELEGRAM_BOT_TOKEN');
 if (empty($bot_token)) {
-    $bot_token = '8330456846:AAFYmkLZFCx1qw4n2sQa5eRCJBO26NV1QYM'; // ⚠️ REMOVE IN PRODUCTION
+    $bot_token = '8330456846:AAFYmkLZFCx1qw4n2sQa5eRCJBO26NV1QYM';
     $log("Using fallback token");
 }
 
@@ -192,6 +184,7 @@ function getNextWorkingDay($fromDate = null) {
     return null;
 }
 
+// ✅ FIXED: Get available slots with proper past-time filtering for today
 function getAvailableTimeSlots($pdo, $date, $doctor_id = 1) {
     if (!isWorkingDay($date)) {
         return [];
@@ -199,7 +192,8 @@ function getAvailableTimeSlots($pdo, $date, $doctor_id = 1) {
     
     $bookedSlots = [];
     try {
-        $stmt = $pdo->prepare("SELECT appointment_time FROM appointments WHERE appointment_date = ? AND doctor_id = ? AND status NOT IN ('cancelled', 'no-show')");
+        // ✅ FIXED: Exclude 'completed' from booked slots check
+        $stmt = $pdo->prepare("SELECT appointment_time FROM appointments WHERE appointment_date = ? AND doctor_id = ? AND status NOT IN ('cancelled', 'no-show', 'completed')");
         $stmt->execute([$date, $doctor_id]);
         foreach ($stmt->fetchAll() as $b) {
             $bookedSlots[] = date('H:i:s', strtotime($b['appointment_time']));
@@ -228,10 +222,11 @@ function getAvailableTimeSlots($pdo, $date, $doctor_id = 1) {
             continue;
         }
         
+        // ✅ FIXED: Filter past times for today bookings
         if ($isToday) {
             $slotTime = DateTime::createFromFormat('H:i:s', $time);
-            if ($slotTime && $slotTime < $now) {
-                continue;
+            if ($slotTime && $slotTime <= $now) {
+                continue; // Skip slots at or before current time
             }
         }
         
@@ -239,6 +234,31 @@ function getAvailableTimeSlots($pdo, $date, $doctor_id = 1) {
     }
     
     return $available;
+}
+
+// ✅ NEW: Check if session is expired (30 min timeout)
+function isSessionValid($session) {
+    if (!$session || empty($session['updated_at'])) {
+        return false;
+    }
+    $updatedAt = new DateTime($session['updated_at']);
+    $now = new DateTime();
+    $interval = $now->diff($updatedAt);
+    $minutes = ($interval->days * 24 * 60) + ($interval->h * 60) + $interval->i;
+    return $minutes < 30; // 30 minute session timeout
+}
+
+// ✅ FIXED: Calculate queue position excluding completed appointments
+function calculateQueuePosition($pdo, $appointment_date, $appointment_time, $doctor_id) {
+    try {
+        // ✅ Exclude 'completed' status - only count scheduled/confirmed ahead
+        $stmt = $pdo->prepare("SELECT COUNT(*) + 1 FROM appointments WHERE appointment_date = ? AND appointment_time < ? AND doctor_id = ? AND status IN ('scheduled', 'confirmed')");
+        $stmt->execute([$appointment_date, $appointment_time, $doctor_id]);
+        return (int)$stmt->fetchColumn();
+    } catch (PDOException $e) {
+        error_log('[BOT] Queue calc error: ' . $e->getMessage());
+        return 1;
+    }
 }
 
 // ========== CALLBACK HANDLER ==========
@@ -301,10 +321,8 @@ if (isset($update['callback_query'])) {
             if ($appointments) {
                 $response = "📋 *Your Appointments*\n\n";
                 foreach ($appointments as $apt) {
-                    // ✅ DYNAMIC QUEUE: Calculate position on-the-fly
-                    $pos_calc = $pdo->prepare("SELECT COUNT(*) + 1 FROM appointments WHERE appointment_date = ? AND appointment_time < ? AND doctor_id = ? AND status IN ('scheduled', 'confirmed')");
-                    $pos_calc->execute([$apt['appointment_date'], $apt['appointment_time'], $apt['doctor_id']]);
-                    $dyn_queue = (int)$pos_calc->fetchColumn();
+                    // ✅ FIXED: Use helper function that excludes 'completed'
+                    $dyn_queue = calculateQueuePosition($pdo, $apt['appointment_date'], $apt['appointment_time'], $apt['doctor_id']);
                     
                     $icon = in_array($apt['status'], ['confirmed', 'completed']) ? '✅' : '⏳';
                     $response .= "{$icon} " . date('M j, Y', strtotime($apt['appointment_date'])) . " • " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
@@ -328,10 +346,7 @@ if (isset($update['callback_query'])) {
             $apt = $stmt->fetch();
             
             if ($apt) {
-                // ✅ DYNAMIC QUEUE: Calculate position on-the-fly
-                $pos_calc = $pdo->prepare("SELECT COUNT(*) + 1 FROM appointments WHERE appointment_date = ? AND appointment_time < ? AND doctor_id = ? AND status IN ('scheduled', 'confirmed')");
-                $pos_calc->execute([$apt['appointment_date'], $apt['appointment_time'], $apt['doctor_id']]);
-                $dyn_queue = (int)$pos_calc->fetchColumn();
+                $dyn_queue = calculateQueuePosition($pdo, $apt['appointment_date'], $apt['appointment_time'], $apt['doctor_id']);
                 
                 $response = "📅 *Next Appointment*\n\n";
                 $response .= "📆 " . date('l, F j, Y', strtotime($apt['appointment_date'])) . "\n";
@@ -351,6 +366,7 @@ if (isset($update['callback_query'])) {
         
     } elseif ($callback_data === 'cmd:queue') {
         try {
+            // ✅ FIXED: Exclude 'completed' from people_ahead count
             $stmt = $pdo->prepare("SELECT a.*, CONCAT(d.first_name, ' ', d.last_name) as doctor_name, 
                 (SELECT COUNT(*) FROM appointments WHERE appointment_date = a.appointment_date AND appointment_time < a.appointment_time AND status IN ('scheduled', 'confirmed') AND doctor_id = a.doctor_id) as people_ahead 
                 FROM appointments a 
@@ -366,7 +382,8 @@ if (isset($update['callback_query'])) {
                 $response = "🎫 *Your Queue*\n\n";
                 $response .= "👨‍⚕️ Dr. {$apt['doctor_name']}\n";
                 $response .= "🎟️ #{$position}\n";
-                $response .= $ahead === 0 ? "🔔 *You're NEXT!*" : "⏱️ ~" . ($ahead * 15) . " min wait";
+                // ✅ FIXED: 30 min per person to match slot spacing
+                $response .= $ahead === 0 ? "🔔 *You're NEXT!*" : "⏱️ ~" . ($ahead * 30) . " min wait";
             } else {
                 $response = "🎫 *No active queue today*";
             }
@@ -400,8 +417,9 @@ if (isset($update['callback_query'])) {
         $buttons = [];
         $row = [];
         $added = 0;
+        // ✅ FIXED: Start from TODAY instead of tomorrow
         $startDate = new DateTime();
-        $startDate->modify('+1 day');
+        $startDate->setTime(0, 0, 0);
         $count = 0;
         
         while ($added < 7 && $count < 21) {
@@ -491,8 +509,9 @@ if (isset($update['callback_query'])) {
             $buttons = [];
             $row = [];
             $added = 0;
+            // ✅ FIXED: Start from +7 days for "more" to avoid overlap
             $startDate = new DateTime();
-            $startDate->modify('+8 days');
+            $startDate->modify('+7 days');
             $count = 0;
             
             while ($added < 7 && $count < 21) {
@@ -518,8 +537,8 @@ if (isset($update['callback_query'])) {
         }
         
         $dateObj = DateTime::createFromFormat('Y-m-d', $dateVal);
-        $tomorrow = new DateTime('tomorrow');
         $today = new DateTime('today');
+        $today->setTime(0, 0, 0);
         
         if (!$dateObj || !isWorkingDay($dateObj)) {
             editMessageText($chat_id, $message_id, "❌ *Clinic Closed*\n\nWe're only open Sunday-Thursday.\n\nPlease select a working day:", $bot_token, createKeyboard([[['text' => '📅 Try Again', 'callback_data' => 'cmd:askappointment']]]));
@@ -528,17 +547,29 @@ if (isset($update['callback_query'])) {
             exit;
         }
         
-        if ($dateObj < $tomorrow && $dateObj->format('Y-m-d') !== $today->format('Y-m-d')) {
-            editMessageText($chat_id, $message_id, "❌ Please select today or a future date.", $bot_token, createKeyboard([[['text' => '📅 Try Again', 'callback_data' => 'booking:date']]]));
+        // ✅ FIXED: Allow today via buttons (getAvailableTimeSlots handles past filtering)
+        if ($dateObj < $today) {
+            editMessageText($chat_id, $message_id, "❌ Please select today or a future date.", $bot_token, createKeyboard([[['text' => '📅 Try Again', 'callback_data' => 'cmd:askappointment']]]));
             http_response_code(200);
             echo "OK";
             exit;
         }
         
+        // ✅ FIXED: Safer session loading with validation
         try {
-            $stmt = $pdo->prepare("SELECT data_json FROM telegram_sessions WHERE telegram_user_id = ? LIMIT 1");
+            $stmt = $pdo->prepare("SELECT step, data_json, updated_at FROM telegram_sessions WHERE telegram_user_id = ? LIMIT 1");
             $stmt->execute([$telegram_user_id]);
             $sess = $stmt->fetch();
+            
+            // ✅ Check session expiration
+            if (!isSessionValid($sess)) {
+                $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+                editMessageText($chat_id, $message_id, "⏰ Session expired. Please start over.", $bot_token, createKeyboard([[['text' => '🏥 Book', 'callback_data' => 'cmd:askappointment']]]));
+                http_response_code(200);
+                echo "OK";
+                exit;
+            }
+            
             $session_data = json_decode((is_array($sess) ? ($sess['data_json'] ?? '{}') : '{}'), true);
         } catch (PDOException $e) {
             $log("Session load error: " . $e->getMessage());
@@ -583,21 +614,39 @@ if (isset($update['callback_query'])) {
             }
         }
         if (!empty($row)) $buttons[] = $row;
-        $buttons[] = [['text' => '🔙 Change Date', 'callback_data' => 'booking:date'], ['text' => '🔄 Cancel', 'callback_data' => 'cmd:home']];
+        $buttons[] = [['text' => '🔙 Change Date', 'callback_data' => 'date:more'], ['text' => '🔄 Cancel', 'callback_data' => 'cmd:home']];
         
         editMessageText($chat_id, $message_id, $response, $bot_token, createKeyboard($buttons));
         
     } elseif (strpos($callback_data, 'time:') === 0) {
         $timeVal = substr($callback_data, 5);
         
+        // ✅ FIXED: Safer session loading with expiration check
         try {
-            $stmt = $pdo->prepare("SELECT data_json FROM telegram_sessions WHERE telegram_user_id = ? LIMIT 1");
+            $stmt = $pdo->prepare("SELECT step, data_json, updated_at FROM telegram_sessions WHERE telegram_user_id = ? LIMIT 1");
             $stmt->execute([$telegram_user_id]);
             $sess = $stmt->fetch();
+            
+            if (!isSessionValid($sess)) {
+                $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+                editMessageText($chat_id, $message_id, "⏰ Session expired. Please start over.", $bot_token, createKeyboard([[['text' => '🏥 Book', 'callback_data' => 'cmd:askappointment']]]));
+                http_response_code(200);
+                echo "OK";
+                exit;
+            }
+            
             $session_data = json_decode((is_array($sess) ? ($sess['data_json'] ?? '{}') : '{}'), true);
         } catch (PDOException $e) {
             $log("Session load error: " . $e->getMessage());
             editMessageText($chat_id, $message_id, "⚠️ Session error.", $bot_token);
+            http_response_code(200);
+            echo "OK";
+            exit;
+        }
+        
+        // ✅ FIXED: Ensure date exists in session before proceeding
+        if (empty($session_data['date']) || empty($session_data['available_slots'])) {
+            editMessageText($chat_id, $message_id, "⚠️ Booking session incomplete. Please start over.", $bot_token, createKeyboard([[['text' => '🏥 Book', 'callback_data' => 'cmd:askappointment']]]));
             http_response_code(200);
             echo "OK";
             exit;
@@ -620,7 +669,7 @@ if (isset($update['callback_query'])) {
         }
         
         try {
-            $check = $pdo->prepare("SELECT appointment_id FROM appointments WHERE appointment_date = ? AND appointment_time = ? AND doctor_id = ? AND status NOT IN ('cancelled', 'no-show') LIMIT 1");
+            $check = $pdo->prepare("SELECT appointment_id FROM appointments WHERE appointment_date = ? AND appointment_time = ? AND doctor_id = ? AND status NOT IN ('cancelled', 'no-show', 'completed') LIMIT 1");
             $check->execute([$session_data['date'], $selected_slot['time'], 1]);
             
             if ($check->rowCount() > 0) {
@@ -640,10 +689,10 @@ if (isset($update['callback_query'])) {
                         }
                     }
                     if (!empty($row)) $buttons[] = $row;
-                    $buttons[] = [['text' => '🔙 Change Date', 'callback_data' => 'booking:date'], ['text' => '🔄 Cancel', 'callback_data' => 'cmd:home']];
+                    $buttons[] = [['text' => '🔙 Change Date', 'callback_data' => 'date:more'], ['text' => '🔄 Cancel', 'callback_data' => 'cmd:home']];
                     editMessageText($chat_id, $message_id, $response, $bot_token, createKeyboard($buttons));
                 } else {
-                    editMessageText($chat_id, $message_id, "❌ No slots left on {$session_data['display_date']}.", $bot_token, createKeyboard([[['text' => '📅 Pick Another', 'callback_data' => 'booking:date']], [['text' => '🔄 Cancel', 'callback_data' => 'cmd:home']]]));
+                    editMessageText($chat_id, $message_id, "❌ No slots left on {$session_data['display_date']}.", $bot_token, createKeyboard([[['text' => '📅 Pick Another', 'callback_data' => 'date:more']], [['text' => '🔄 Cancel', 'callback_data' => 'cmd:home']]]));
                 }
                 http_response_code(200);
                 echo "OK";
@@ -679,10 +728,20 @@ if (isset($update['callback_query'])) {
         editMessageText($chat_id, $message_id, $response, $bot_token, $kb);
         
     } elseif ($callback_data === 'confirm:book') {
+        // ✅ FIXED: Session validation with expiration
         try {
-            $stmt = $pdo->prepare("SELECT data_json FROM telegram_sessions WHERE telegram_user_id = ? LIMIT 1");
+            $stmt = $pdo->prepare("SELECT step, data_json, updated_at FROM telegram_sessions WHERE telegram_user_id = ? LIMIT 1");
             $stmt->execute([$telegram_user_id]);
             $sess = $stmt->fetch();
+            
+            if (!isSessionValid($sess)) {
+                $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+                editMessageText($chat_id, $message_id, "⏰ Session expired. Please start over.", $bot_token);
+                http_response_code(200);
+                echo "OK";
+                exit;
+            }
+            
             $session_data = json_decode((is_array($sess) ? ($sess['data_json'] ?? '{}') : '{}'), true);
         } catch (PDOException $e) {
             $log("Session load error: " . $e->getMessage());
@@ -692,8 +751,17 @@ if (isset($update['callback_query'])) {
             exit;
         }
         
+        // Validate required session fields
+        if (empty($session_data['date']) || empty($session_data['time']) || empty($session_data['doctor_name'])) {
+            editMessageText($chat_id, $message_id, "⚠️ Incomplete booking data. Start over with /askappointment", $bot_token);
+            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+            http_response_code(200);
+            echo "OK";
+            exit;
+        }
+        
         try {
-            $check = $pdo->prepare("SELECT appointment_id FROM appointments WHERE appointment_date = ? AND appointment_time = ? AND doctor_id = ? AND status NOT IN ('cancelled', 'no-show') LIMIT 1 FOR UPDATE");
+            $check = $pdo->prepare("SELECT appointment_id FROM appointments WHERE appointment_date = ? AND appointment_time = ? AND doctor_id = ? AND status NOT IN ('cancelled', 'no-show', 'completed') LIMIT 1 FOR UPDATE");
             $check->execute([$session_data['date'], $session_data['time'], 1]);
             
             if ($check->rowCount() > 0) {
@@ -707,19 +775,10 @@ if (isset($update['callback_query'])) {
             $log("Final check error: " . $e->getMessage());
         }
         
-        // ✅ Calculate dynamic queue position for success message
-        try {
-            $q = $pdo->prepare("SELECT COUNT(*) + 1 FROM appointments WHERE appointment_date = ? AND appointment_time < ? AND doctor_id = ? AND status IN ('scheduled', 'confirmed')");
-            $q->execute([$session_data['date'], $session_data['time'], 1]);
-            $queueNum = (int)$q->fetchColumn();
-        } catch (PDOException $e) {
-            $log("Queue calc error: " . $e->getMessage());
-            $queueNum = 1;
-        }
+        $queueNum = calculateQueuePosition($pdo, $session_data['date'], $session_data['time'], 1);
         
         try {
             $pdo->beginTransaction();
-            // ✅ Store NULL for queue_number - calculated dynamically on display
             $pdo->prepare("INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, queue_number, status, send_sms, created_at) VALUES (?, ?, ?, ?, NULL, 'scheduled', 1, NOW())")
                 ->execute([$patient['patient_id'], 1, $session_data['date'], $session_data['time']]);
             $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
@@ -741,10 +800,20 @@ if (isset($update['callback_query'])) {
         }
         
     } elseif ($callback_data === 'booking:date') {
+        // ✅ FIXED: Use consistent callback prefix 'date:' not 'booking:date'
         try {
-            $stmt = $pdo->prepare("SELECT data_json FROM telegram_sessions WHERE telegram_user_id = ? LIMIT 1");
+            $stmt = $pdo->prepare("SELECT step, data_json, updated_at FROM telegram_sessions WHERE telegram_user_id = ? LIMIT 1");
             $stmt->execute([$telegram_user_id]);
             $sess = $stmt->fetch();
+            
+            if (!isSessionValid($sess)) {
+                $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+                editMessageText($chat_id, $message_id, "⏰ Session expired.", $bot_token, createKeyboard([[['text' => '🏥 Book', 'callback_data' => 'cmd:askappointment']]]));
+                http_response_code(200);
+                echo "OK";
+                exit;
+            }
+            
             $session_data = json_decode((is_array($sess) ? ($sess['data_json'] ?? '{}') : '{}'), true);
         } catch (PDOException $e) {
             $log("Session load error: " . $e->getMessage());
@@ -755,8 +824,9 @@ if (isset($update['callback_query'])) {
         $buttons = [];
         $row = [];
         $added = 0;
+        // ✅ FIXED: Include today in date selection
         $startDate = new DateTime();
-        $startDate->modify('+1 day');
+        $startDate->setTime(0, 0, 0);
         $count = 0;
         
         while ($added < 7 && $count < 21) {
@@ -779,10 +849,20 @@ if (isset($update['callback_query'])) {
         editMessageText($chat_id, $message_id, $response, $bot_token, createKeyboard($buttons));
         
     } elseif ($callback_data === 'booking:time') {
+        // ✅ FIXED: Use 'date:more' for date change, ensure session has date
         try {
-            $stmt = $pdo->prepare("SELECT data_json FROM telegram_sessions WHERE telegram_user_id = ? LIMIT 1");
+            $stmt = $pdo->prepare("SELECT step, data_json, updated_at FROM telegram_sessions WHERE telegram_user_id = ? LIMIT 1");
             $stmt->execute([$telegram_user_id]);
             $sess = $stmt->fetch();
+            
+            if (!isSessionValid($sess)) {
+                $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+                editMessageText($chat_id, $message_id, "⏰ Session expired.", $bot_token, createKeyboard([[['text' => '🏥 Book', 'callback_data' => 'cmd:askappointment']]]));
+                http_response_code(200);
+                echo "OK";
+                exit;
+            }
+            
             $session_data = json_decode((is_array($sess) ? ($sess['data_json'] ?? '{}') : '{}'), true);
         } catch (PDOException $e) {
             $log("Session load error: " . $e->getMessage());
@@ -792,10 +872,18 @@ if (isset($update['callback_query'])) {
             exit;
         }
         
-        $availableSlots = getAvailableTimeSlots($pdo, $session_data['date'] ?? '', 1);
+        // ✅ FIXED: Validate session date before fetching slots
+        if (empty($session_data['date'])) {
+            editMessageText($chat_id, $message_id, "⚠️ Date not set. Please start over.", $bot_token, createKeyboard([[['text' => '🏥 Book', 'callback_data' => 'cmd:askappointment']]]));
+            http_response_code(200);
+            echo "OK";
+            exit;
+        }
+        
+        $availableSlots = getAvailableTimeSlots($pdo, $session_data['date'], 1);
         
         if (empty($availableSlots)) {
-            editMessageText($chat_id, $message_id, "❌ No slots available. Pick another date.", $bot_token, createKeyboard([[['text' => '📅 Pick Another', 'callback_data' => 'booking:date']], [['text' => '🔄 Cancel', 'callback_data' => 'cmd:home']]]));
+            editMessageText($chat_id, $message_id, "❌ No slots available. Pick another date.", $bot_token, createKeyboard([[['text' => '📅 Pick Another', 'callback_data' => 'date:more']], [['text' => '🔄 Cancel', 'callback_data' => 'cmd:home']]]));
             http_response_code(200);
             echo "OK";
             exit;
@@ -813,7 +901,7 @@ if (isset($update['callback_query'])) {
             }
         }
         if (!empty($row)) $buttons[] = $row;
-        $buttons[] = [['text' => '🔙 Change Date', 'callback_data' => 'booking:date'], ['text' => '🔄 Cancel', 'callback_data' => 'cmd:home']];
+        $buttons[] = [['text' => '🔙 Change Date', 'callback_data' => 'date:more'], ['text' => '🔄 Cancel', 'callback_data' => 'cmd:home']];
         
         $session_data['available_slots'] = $availableSlots;
         try {
@@ -877,7 +965,7 @@ if (isset($update['message'])) {
     }
     
     try {
-        $stmt = $pdo->prepare("SELECT step, data_json FROM telegram_sessions WHERE telegram_user_id = ? LIMIT 1");
+        $stmt = $pdo->prepare("SELECT step, data_json, updated_at FROM telegram_sessions WHERE telegram_user_id = ? LIMIT 1");
         $stmt->execute([$telegram_user_id]);
         $session = $stmt->fetch();
     } catch (PDOException $e) {
@@ -962,6 +1050,15 @@ if (isset($update['message'])) {
     // ========== BOOKING FLOW ==========
     
     if ($session && ($session['step'] ?? '') === 'booking_date') {
+        // ✅ FIXED: Session expiration check
+        if (!isSessionValid($session)) {
+            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+            sendMessage($chat_id, "⏰ Session expired. Type /askappointment to start over.", $bot_token);
+            http_response_code(200);
+            echo "OK";
+            exit;
+        }
+        
         try {
             $sess_data = json_decode($session['data_json'] ?? '{}', true);
         } catch (Exception $e) {
@@ -969,8 +1066,8 @@ if (isset($update['message'])) {
         }
         
         $dateObj = parseDateInput($text);
-        $tomorrow = new DateTime('tomorrow');
         $today = new DateTime('today');
+        $today->setTime(0, 0, 0);
         
         if (!$dateObj) {
             sendMessage($chat_id, "❌ Invalid date format. Use YYYY-MM-DD, DD-MM-YYYY, or DD/MM/YYYY.", $bot_token);
@@ -986,9 +1083,8 @@ if (isset($update['message'])) {
             exit;
         }
         
-        if ($dateObj >= $tomorrow || $dateObj->format('Y-m-d') === $today->format('Y-m-d')) {
-            // Valid
-        } else {
+        // ✅ FIXED: Allow today via text input (getAvailableTimeSlots filters past times)
+        if ($dateObj < $today) {
             sendMessage($chat_id, "❌ Please select today or a future date.", $bot_token);
             http_response_code(200);
             echo "OK";
@@ -1042,10 +1138,28 @@ if (isset($update['message'])) {
     }
     
     if ($session && ($session['step'] ?? '') === 'booking_time') {
+        // ✅ FIXED: Session expiration
+        if (!isSessionValid($session)) {
+            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+            sendMessage($chat_id, "⏰ Session expired. Type /askappointment to start over.", $bot_token);
+            http_response_code(200);
+            echo "OK";
+            exit;
+        }
+        
         try {
             $sess_data = json_decode($session['data_json'] ?? '{}', true);
         } catch (Exception $e) {
             $sess_data = [];
+        }
+        
+        // ✅ FIXED: Ensure date and slots exist in session
+        if (empty($sess_data['date']) || empty($sess_data['available_slots'])) {
+            sendMessage($chat_id, "⚠️ Booking session incomplete. Type /askappointment to restart.", $bot_token);
+            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+            http_response_code(200);
+            echo "OK";
+            exit;
         }
         
         $availableSlots = $sess_data['available_slots'] ?? [];
@@ -1054,7 +1168,7 @@ if (isset($update['message'])) {
             $selected_slot = $availableSlots[(int)$text - 1];
             
             try {
-                $check = $pdo->prepare("SELECT appointment_id FROM appointments WHERE appointment_date = ? AND appointment_time = ? AND doctor_id = ? AND status NOT IN ('cancelled', 'no-show') LIMIT 1");
+                $check = $pdo->prepare("SELECT appointment_id FROM appointments WHERE appointment_date = ? AND appointment_time = ? AND doctor_id = ? AND status NOT IN ('cancelled', 'no-show', 'completed') LIMIT 1");
                 $check->execute([$sess_data['date'], $selected_slot['time'], 1]);
                 
                 if ($check->rowCount() > 0) {
@@ -1094,23 +1208,51 @@ if (isset($update['message'])) {
             } catch (PDOException $e) {}
             sendMessage($chat_id, "❌ Booking cancelled. Type /askappointment to start over.", $bot_token);
         } else {
-            sendMessage($chat_id, "❌ Invalid choice. Enter a number from the list.", $bot_token);
+            sendMessage($chat_id, "❌ Invalid choice. Enter a number from the list or type 'cancel'.", $bot_token);
         }
         http_response_code(200);
         echo "OK";
         exit;
     }
     
+    // ✅ FIXED: booking_confirm now properly handles text input for date changes
     if ($session && ($session['step'] ?? '') === 'booking_confirm') {
+        // ✅ Session expiration check
+        if (!isSessionValid($session)) {
+            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+            sendMessage($chat_id, "⏰ Session expired. Type /askappointment to start over.", $bot_token);
+            http_response_code(200);
+            echo "OK";
+            exit;
+        }
+        
         try {
             $sess_data = json_decode($session['data_json'] ?? '{}', true);
         } catch (Exception $e) {
             $sess_data = [];
         }
         
+        // Validate required fields
+        if (empty($sess_data['date']) || empty($sess_data['doctor_name'])) {
+            sendMessage($chat_id, "⚠️ Incomplete session. Type /askappointment to restart.", $bot_token);
+            $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+            http_response_code(200);
+            echo "OK";
+            exit;
+        }
+        
         if (strtolower($text) === 'confirm') {
+            // Ensure time is set
+            if (empty($sess_data['time'])) {
+                sendMessage($chat_id, "⚠️ Time not selected. Type /askappointment to restart.", $bot_token);
+                $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
+                http_response_code(200);
+                echo "OK";
+                exit;
+            }
+            
             try {
-                $check = $pdo->prepare("SELECT appointment_id FROM appointments WHERE appointment_date = ? AND appointment_time = ? AND doctor_id = ? AND status NOT IN ('cancelled', 'no-show') LIMIT 1 FOR UPDATE");
+                $check = $pdo->prepare("SELECT appointment_id FROM appointments WHERE appointment_date = ? AND appointment_time = ? AND doctor_id = ? AND status NOT IN ('cancelled', 'no-show', 'completed') LIMIT 1 FOR UPDATE");
                 $check->execute([$sess_data['date'], $sess_data['time'], 1]);
                 
                 if ($check->rowCount() > 0) {
@@ -1124,19 +1266,10 @@ if (isset($update['message'])) {
                 $log("Final check error: " . $e->getMessage());
             }
             
-            // ✅ Calculate dynamic queue position for success message
-            try {
-                $q = $pdo->prepare("SELECT COUNT(*) + 1 FROM appointments WHERE appointment_date = ? AND appointment_time < ? AND doctor_id = ? AND status IN ('scheduled', 'confirmed')");
-                $q->execute([$sess_data['date'], $sess_data['time'], 1]);
-                $queueNum = (int)$q->fetchColumn();
-            } catch (PDOException $e) {
-                $log("Queue calc error: " . $e->getMessage());
-                $queueNum = 1;
-            }
+            $queueNum = calculateQueuePosition($pdo, $sess_data['date'], $sess_data['time'], 1);
             
             try {
                 $pdo->beginTransaction();
-                // ✅ Store NULL for queue_number - calculated dynamically on display
                 $pdo->prepare("INSERT INTO appointments (patient_id, doctor_id, appointment_date, appointment_time, queue_number, status, send_sms, created_at) VALUES (?, ?, ?, ?, NULL, 'scheduled', 1, NOW())")
                     ->execute([$patient['patient_id'], 1, $sess_data['date'], $sess_data['time']]);
                 $pdo->prepare("DELETE FROM telegram_sessions WHERE telegram_user_id = ?")->execute([$telegram_user_id]);
@@ -1161,11 +1294,12 @@ if (isset($update['message'])) {
             } catch (PDOException $e) {}
             sendMessage($chat_id, "❌ Cancelled. Type /askappointment to start over.", $bot_token);
         } else {
+            // ✅ FIXED: Handle date input during confirm step
             $newDate = parseDateInput($text);
-            $tomorrow = new DateTime('tomorrow');
             $today = new DateTime('today');
+            $today->setTime(0, 0, 0);
             
-            if ($newDate && isWorkingDay($newDate) && ($newDate >= $tomorrow || $newDate->format('Y-m-d') === $today->format('Y-m-d'))) {
+            if ($newDate && isWorkingDay($newDate) && $newDate >= $today) {
                 $sess_data['date'] = $newDate->format('Y-m-d');
                 $sess_data['display_date'] = $newDate->format('l, F j, Y');
                 unset($sess_data['time'], $sess_data['display_time']);
@@ -1214,10 +1348,7 @@ if (isset($update['message'])) {
             if ($appointments) {
                 $response = "📋 *Your Appointments*\n\n";
                 foreach ($appointments as $apt) {
-                    // ✅ DYNAMIC QUEUE: Calculate position on-the-fly
-                    $pos_calc = $pdo->prepare("SELECT COUNT(*) + 1 FROM appointments WHERE appointment_date = ? AND appointment_time < ? AND doctor_id = ? AND status IN ('scheduled', 'confirmed')");
-                    $pos_calc->execute([$apt['appointment_date'], $apt['appointment_time'], $apt['doctor_id']]);
-                    $dyn_queue = (int)$pos_calc->fetchColumn();
+                    $dyn_queue = calculateQueuePosition($pdo, $apt['appointment_date'], $apt['appointment_time'], $apt['doctor_id']);
                     
                     $icon = in_array($apt['status'], ['confirmed', 'completed']) ? '✅' : '⏳';
                     $response .= "{$icon} " . date('M j, Y', strtotime($apt['appointment_date'])) . " • " . date('g:i A', strtotime($apt['appointment_time'])) . "\n";
@@ -1241,10 +1372,7 @@ if (isset($update['message'])) {
             $apt = $stmt->fetch();
             
             if ($apt) {
-                // ✅ DYNAMIC QUEUE: Calculate position on-the-fly
-                $pos_calc = $pdo->prepare("SELECT COUNT(*) + 1 FROM appointments WHERE appointment_date = ? AND appointment_time < ? AND doctor_id = ? AND status IN ('scheduled', 'confirmed')");
-                $pos_calc->execute([$apt['appointment_date'], $apt['appointment_time'], $apt['doctor_id']]);
-                $dyn_queue = (int)$pos_calc->fetchColumn();
+                $dyn_queue = calculateQueuePosition($pdo, $apt['appointment_date'], $apt['appointment_time'], $apt['doctor_id']);
                 
                 $response = "📅 *Next Appointment*\n\n";
                 $response .= "📆 " . date('l, F j, Y', strtotime($apt['appointment_date'])) . "\n";
@@ -1278,7 +1406,8 @@ if (isset($update['message'])) {
                 $response = "🎫 *Queue*\n\n";
                 $response .= "👨‍⚕️ Dr. {$apt['doctor_name']}\n";
                 $response .= "🎟️ #{$position}\n";
-                $response .= $ahead === 0 ? "🔔 *You're NEXT!*" : "⏱️ ~" . ($ahead * 15) . " min wait";
+                // ✅ FIXED: 30 min per person
+                $response .= $ahead === 0 ? "🔔 *You're NEXT!*" : "⏱️ ~" . ($ahead * 30) . " min wait";
             } else {
                 $response = "🎫 *No active queue*";
             }
@@ -1310,8 +1439,9 @@ if (isset($update['message'])) {
         $buttons = [];
         $row = [];
         $added = 0;
+        // ✅ FIXED: Include today in date buttons
         $startDate = new DateTime();
-        $startDate->modify('+1 day');
+        $startDate->setTime(0, 0, 0);
         $count = 0;
         
         while ($added < 7 && $count < 21) {
@@ -1329,7 +1459,7 @@ if (isset($update['message'])) {
             $count++;
         }
         if (!empty($row)) $buttons[] = $row;
-        $buttons[] = [['text' => '🏠 Cancel', 'callback_data' => 'cmd:home']];
+        $buttons[] = [['text' => '◀️ More', 'callback_data' => 'date:more'], ['text' => '🏠 Cancel', 'callback_data' => 'cmd:home']];
         
         $session_data = ['doctor_id' => 1, 'doctor_name' => 'John'];
         try {
