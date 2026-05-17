@@ -66,32 +66,46 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($check_stmt->rowCount() > 0) {
             $error = "You already have another appointment on this date";
         } else {
-            // ✅ DYNAMIC QUEUE: Update with queue_number = NULL
-            $update_sql = "UPDATE appointments SET 
-                          appointment_date = ?, 
-                          appointment_time = ?,
-                          doctor_id = ?,
-                          queue_number = NULL,
-                          notes = ?
-                          WHERE appointment_id = ? AND patient_id = ?";
-            $update_stmt = $pdo->prepare($update_sql);
+            // ✅ NEW: Check if DOCTOR is already booked at this date/time (exclude current appointment)
+            $conflict_sql = "SELECT appointment_id FROM appointments 
+                             WHERE doctor_id = ? 
+                             AND appointment_date = ? 
+                             AND appointment_time = ? 
+                             AND appointment_id != ?
+                             AND status IN ('scheduled', 'confirmed')";
+            $conflict_stmt = $pdo->prepare($conflict_sql);
+            $conflict_stmt->execute([$doctor_id, $new_date, $new_time, $appointment_id]);
             
-            if ($update_stmt->execute([$new_date, $new_time, $doctor_id, $notes, $appointment_id, $patient_id])) {
-                
-                // ✅ Calculate dynamic queue position for success message (same logic as dashboard.php)
-                $queue_sql = "SELECT COUNT(*) as people_ahead FROM appointments 
-                              WHERE appointment_date = ? 
-                              AND appointment_time < ? 
-                              AND status IN ('scheduled', 'confirmed')
-                              AND appointment_id != ?";
-                $queue_stmt = $pdo->prepare($queue_sql);
-                $queue_stmt->execute([$new_date, $new_time, $appointment_id]);
-                $people_ahead = (int)$queue_stmt->fetchColumn();
-                $new_queue_position = $people_ahead + 1;
-                
-                $success = "Appointment rescheduled successfully! New queue number: " . $new_queue_position;
+            if ($conflict_stmt->rowCount() > 0) {
+                $error = "This time slot is no longer available. Please choose another.";
             } else {
-                $error = "Failed to reschedule appointment";
+                // ✅ DYNAMIC QUEUE: Update with queue_number = NULL
+                $update_sql = "UPDATE appointments SET 
+                              appointment_date = ?, 
+                              appointment_time = ?,
+                              doctor_id = ?,
+                              queue_number = NULL,
+                              notes = ?
+                              WHERE appointment_id = ? AND patient_id = ?";
+                $update_stmt = $pdo->prepare($update_sql);
+                
+                if ($update_stmt->execute([$new_date, $new_time, $doctor_id, $notes, $appointment_id, $patient_id])) {
+                    
+                    // ✅ Calculate dynamic queue position for success message (same logic as dashboard.php)
+                    $queue_sql = "SELECT COUNT(*) as people_ahead FROM appointments 
+                                  WHERE appointment_date = ? 
+                                  AND appointment_time < ? 
+                                  AND status IN ('scheduled', 'confirmed')
+                                  AND appointment_id != ?";
+                    $queue_stmt = $pdo->prepare($queue_sql);
+                    $queue_stmt->execute([$new_date, $new_time, $appointment_id]);
+                    $people_ahead = (int)$queue_stmt->fetchColumn();
+                    $new_queue_position = $people_ahead + 1;
+                    
+                    $success = "Appointment rescheduled successfully! New queue number: " . $new_queue_position;
+                } else {
+                    $error = "Failed to reschedule appointment";
+                }
             }
         }
     }
