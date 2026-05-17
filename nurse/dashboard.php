@@ -390,7 +390,7 @@ if (!$stats) {
         <div class="filter-bar">
             <a href="?filter=today&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="filter-btn <?php echo $filter == 'today' ? 'active' : ''; ?>"><i class="fas fa-calendar-day"></i> Today</a>
             <a href="?filter=tomorrow&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="filter-btn <?php echo $filter == 'tomorrow' ? 'active' : ''; ?>"><i class="fas fa-calendar-plus"></i> Tomorrow</a>
-            <a href="?filter=all&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="filter-btn <?php echo $filter == 'all' ? 'active' : ''; ?>"><i class="fas fa-list"></i> This Month</a>
+            <a href="?filter=all&csrf_token=<?php echo $_SESSION['csrf_token']; ?>" class="filter-btn <?php echo $filter == 'all' ? 'active' : ''; ?>"><i class="fas fa-list"></i> all appointments </a>
             <!-- ✅ Updated label: "All Appointments" → "This Month" -->
             <span class="filter-info"><i class="fas fa-eye"></i> Showing: <strong><?php if ($filter == 'today') echo date('F j, Y'); elseif ($filter == 'tomorrow') echo date('F j, Y', strtotime('+1 day')); else echo date('F Y'); ?></strong></span>
             <!-- ✅ Updated display: "All dates" → "May 2026" (current month/year) -->
