@@ -417,7 +417,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 </head>
 <body>
     <div class="navbar">
-        <h1><i class="fas fa-stethoscope"></i> Medical Practice</h1>
+        <h1><i class="fas fa-stethoscope"></i> Shifa Medical Center</h1>
         <div class="user-info">
             <i class="fas fa-user-circle" style="color: #4f46e5;"></i>
             <span>Welcome, <?php echo htmlspecialchars($_SESSION['patient_name']); ?></span>
