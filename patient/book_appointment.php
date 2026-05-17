@@ -425,7 +425,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                         <label for="appointment_time"><i class="far fa-clock"></i> Appointment Time</label>
                         <div class="input-wrapper">
                             <i class="far fa-clock"></i>
-                            <input type="time" id="appointment_time" name="appointment_time" min="08:00" max="17:00" required>
+                            <input type="time" id="appointment_time" name="appointment_time" min="08:00" max="16:45" required>
                         </div>
                         <small class="time-hint"><i class="fas fa-briefcase"></i> Working hours: 8:00 AM - 5:00 PM</small>
                     </div>
