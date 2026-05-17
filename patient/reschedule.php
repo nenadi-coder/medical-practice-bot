@@ -66,7 +66,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($check_stmt->rowCount() > 0) {
             $error = "You already have another appointment on this date";
         } else {
-            // ✅ NEW: Check if DOCTOR is already booked at this date/time (exclude current appointment)
+            // ✅ Check if DOCTOR is already booked at this date/time (exclude current appointment)
             $conflict_sql = "SELECT appointment_id FROM appointments 
                              WHERE doctor_id = ? 
                              AND appointment_date = ? 
@@ -80,18 +80,20 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 $error = "This time slot is no longer available. Please choose another.";
             } else {
                 // ✅ DYNAMIC QUEUE: Update with queue_number = NULL
+                // ✅ BUSINESS LOGIC: Reset status to 'scheduled' for nurse re-confirmation
                 $update_sql = "UPDATE appointments SET 
                               appointment_date = ?, 
                               appointment_time = ?,
                               doctor_id = ?,
                               queue_number = NULL,
-                              notes = ?
+                              notes = ?,
+                              status = 'scheduled'  -- ← Reset for nurse review
                               WHERE appointment_id = ? AND patient_id = ?";
                 $update_stmt = $pdo->prepare($update_sql);
                 
                 if ($update_stmt->execute([$new_date, $new_time, $doctor_id, $notes, $appointment_id, $patient_id])) {
                     
-                    // ✅ Calculate dynamic queue position for success message (same logic as dashboard.php)
+                    // ✅ Calculate dynamic queue position for success message
                     $queue_sql = "SELECT COUNT(*) as people_ahead FROM appointments 
                                   WHERE appointment_date = ? 
                                   AND appointment_time < ? 
@@ -102,7 +104,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     $people_ahead = (int)$queue_stmt->fetchColumn();
                     $new_queue_position = $people_ahead + 1;
                     
-                    $success = "Appointment rescheduled successfully! New queue number: " . $new_queue_position;
+                    // ✅ Updated success message to reflect nurse confirmation workflow
+                    $success = "Appointment rescheduled successfully! Your appointment is now pending nurse confirmation.";
                 } else {
                     $error = "Failed to reschedule appointment";
                 }
@@ -117,7 +120,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>Reschedule Appointment | Medical Practice</title>
+    <title>Reschedule Appointment |Shifa Medical Center</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&display=swap" rel="stylesheet">
@@ -448,11 +451,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                     <p><i class="far fa-calendar-alt"></i> <strong>Date:</strong> <?php echo date('F j, Y', strtotime($appointment['appointment_date'])); ?></p>
                     <p><i class="far fa-clock"></i> <strong>Time:</strong> <?php echo date('g:i A', strtotime($appointment['appointment_time'])); ?></p>
                     <p><i class="fas fa-ticket-alt"></i> <strong>Queue #:</strong> <?php echo $appointment['queue_number']; ?></p>
+                    <p><i class="fas fa-tag"></i> <strong>Status:</strong> <span style="text-transform: capitalize;"><?php echo htmlspecialchars($appointment['status']); ?></span></p>
                 </div>
                 
                 <div class="info-box">
                     <i class="fas fa-info-circle" style="font-size: 1.2rem;"></i>
-                    <span><strong>Note:</strong> Changing the date will assign you a new queue number based on the new date.</span>
+                    <span><strong>Note:</strong> Changing your appointment will require nurse re-confirmation.</span>
                 </div>
                 
                 <form method="POST" action="">
