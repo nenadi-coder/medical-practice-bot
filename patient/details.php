@@ -127,7 +127,7 @@ if ($appointment['date_of_birth']) {
 </head>
 <body>
     <div class="navbar">
-        <h1><i class="fas fa-stethoscope"></i> Medical Practice</h1>
+        <h1><i class="fas fa-stethoscope"></i> Shifa Medical Center</h1>
         <a href="dashboard.php" class="back-btn"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
     </div>
     <div class="container">
