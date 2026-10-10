@@ -28,7 +28,7 @@ $log("=== BOT STARTED ===");
 // ========== BOT TOKEN ==========
 $bot_token = getenv('TELEGRAM_BOT_TOKEN');
 if (empty($bot_token)) {
-    $bot_token = '8330456846:AAFYmkLZFCx1qw4n2sQa5eRCJBO26NV1QYM';
+    //$bot_token = '8330456846:AAFYmkLZFCx1qw4n2sQa5eRCJBO26NV1QYM';
     $log("Using fallback token");
 }
 
