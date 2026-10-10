@@ -88,7 +88,7 @@ function sendMessage($chat_id, $message, $bot_token, $keyboard = null) {
 }
 
 function editMessageText($chat_id, $message_id, $message, $bot_token, $keyboard = null) {
-    $url = "https://api.telegram.org/bot{$bot_token}/editMessageText";
+   //$url = "https://api.telegram.org/bot{$bot_token}/editMessageText";
     $data = [
         'chat_id' => $chat_id,
         'message_id' => $message_id,
